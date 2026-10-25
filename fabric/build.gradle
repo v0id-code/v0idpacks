@@ -1,0 +1,46 @@
+buildscript {
+    repositories { maven { url = 'https://maven.fabricmc.net/' }; mavenCentral(); gradlePluginPortal() }
+    dependencies { classpath 'net.fabricmc:fabric-loom:1.18.4' }
+}
+def matrix = new groovy.json.JsonSlurper().parse(rootProject.file('versions.json'))
+def target = rootProject.findProperty('mcVersion') ?: '1.21.4'
+def spec = matrix[target]
+if (spec == null) throw new GradleException("Unsupported Minecraft version: ${target}. See versions.json.")
+def modern = target.startsWith('26.')
+apply plugin: modern ? 'net.fabricmc.fabric-loom' : 'net.fabricmc.fabric-loom-remap'
+base { archivesName = "v0idpacks-${target}" }
+layout.buildDirectory = file("build/${target}")
+dependencies {
+    minecraft "com.mojang:minecraft:${target}"
+    if (!modern) mappings loom.officialMojangMappings()
+    add(modern ? 'implementation' : 'modImplementation', 'net.fabricmc:fabric-loader:0.20.1')
+    for (module in ['fabric-api-base', 'fabric-lifecycle-events-v1', 'fabric-screen-api-v1', modern ? 'fabric-key-mapping-api-v1' : 'fabric-key-binding-api-v1']) {
+        add(modern ? 'implementation' : 'modImplementation', fabricApi.module(module, spec.api))
+    }
+    implementation project(':core')
+}
+java { sourceCompatibility = JavaVersion.toVersion(spec.java); targetCompatibility = JavaVersion.toVersion(spec.java); withSourcesJar() }
+tasks.withType(JavaCompile).configureEach { options.release = spec.java as Integer; options.encoding = 'UTF-8' }
+tasks.named('jar') { from project(':core').sourceSets.main.output }
+processResources {
+    inputs.property 'minecraft', target
+    inputs.property 'version', project.version
+    inputs.property 'java_version', spec.java
+    inputs.property 'smoke', project.hasProperty('smoke')
+    filesMatching('fabric.mod.json') { expand version: project.version, minecraft: target, java_version: spec.java, key_module: modern ? 'fabric-key-mapping-api-v1' : 'fabric-key-binding-api-v1', smoke_entrypoint: project.hasProperty('smoke') ? ', "de.v0idpacks.fabric.SmokeClient"' : '' }
+}
+loom { runs { client { runDir = "../run/${target}" + (project.hasProperty('smoke') ? '-smoke' : '') } } }
+ext.gameGeneration = spec.generation
+ext.gameVersion = target
+apply from: 'adapter.gradle'
+
+tasks.register('verifyPackMetadata') {
+    dependsOn 'generatePackMetadata'
+    doLast {
+        def metadata = new groovy.json.JsonSlurper().parse(layout.buildDirectory.file('generated/resources/v0idpacks-pack-format.json').get().asFile)
+        def major = metadata.pack_format ?: metadata.min_format?.get(0)
+        if (!(major instanceof Number) || major <= 0) throw new GradleException('Invalid pack metadata')
+        if (metadata.min_format && metadata.min_format != metadata.max_format) throw new GradleException('Pack metadata must match the exact target version')
+    }
+}
+tasks.named('check') { dependsOn 'verifyPackMetadata' }

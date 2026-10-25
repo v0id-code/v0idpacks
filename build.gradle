@@ -1,0 +1,14 @@
+plugins { id 'base' }
+allprojects {
+    group = 'de.v0idpacks'
+    version = rootProject.mod_version
+    repositories { mavenCentral() }
+}
+tasks.register('release', Copy) {
+    dependsOn ':fabric:build', ':core:test'
+    from(project(':fabric').layout.buildDirectory.dir('libs')) { include "*-${project.version}.jar" }
+    into layout.projectDirectory.dir("artifacts/${project.version}")
+    doFirst {
+        if (project.hasProperty('smoke')) throw new GradleException('Release artifacts must not contain the smoke-test entrypoint. Remove -Psmoke.')
+    }
+}

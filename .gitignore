@@ -1,0 +1,90 @@
+# Gradle caches and generated output
+.gradle/
+build/
+out/
+bin/
+/artifacts/
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+# The wrapper is required to build a fresh checkout.
+!/gradle/wrapper/gradle-wrapper.jar
+
+# Local Minecraft instances, imported packs and user data
+run/
+runs/
+/.minecraft/
+/config/
+/resourcepacks/
+/mods/
+/saves/
+/screenshots/
+/logs/
+/crash-reports/
+/options.txt
+/servers.dat*
+/usercache.json
+/usernamecache.json
+
+# Credentials and machine-specific configuration
+.env
+.env.*
+!.env.example
+!.env.sample
+local.properties
+*.local.properties
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Editor and IDE state
+.idea/
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+*.iml
+*.ipr
+*.iws
+*.code-workspace
+
+# Local tools, agent notes and unused branding drafts
+/.tools/
+/.codex/
+/.claude/
+/.openai/
+/.tastemaker/
+/SCOPE.md
+/assets/branding/v1/drafts/
+/assets/branding/v1/generation-prompts.json
+/assets/branding/v1/README.md
+
+# Python helper caches and environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Logs, crash dumps, temporary and OS files
+*.log
+hs_err_pid*
+replay_pid*
+*.hprof
+*.jfr
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini

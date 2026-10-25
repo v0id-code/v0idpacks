@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "v0idpacks",
+  "version": "${version}",
+  "name": "v0idpacks",
+  "icon": "assets/v0idpacks/icon.png",
+  "description": "Deine Texturen. Dein Pack. Lokaler Ressourcenpaket-Editor mit Favoriten und 3D-Vorschau.",
+  "environment": "client",
+  "entrypoints": { "client": ["de.v0idpacks.fabric.V0idPacksClient"${smoke_entrypoint}] },
+  "depends": {
+    "fabricloader": ">=0.20.1",
+    "minecraft": "${minecraft}",
+    "java": ">=${java_version}",
+    "fabric-lifecycle-events-v1": "*",
+    "fabric-screen-api-v1": "*",
+    "${key_module}": "*"
+  }
+}

@@ -1,0 +1,89 @@
+def generation = project.gameGeneration
+def target = project.gameVersion
+def events = generation in ['events', 'unobfuscated', 'extractor']
+def identifier = generation in ['unobfuscated', 'extractor'] || target == '1.21.11' ? 'Identifier' : 'ResourceLocation'
+def graphics = target.startsWith('26.') ? 'GuiGraphicsExtractor' : 'GuiGraphics'
+def variables = [
+    IDENTIFIER: identifier,
+    IDENTIFIER_IMPORT: "net.minecraft.resources.${identifier}",
+    GRAPHICS: graphics,
+    GRAPHICS_IMPORT: "net.minecraft.client.gui.${graphics}",
+    RENDER_METHOD: target.startsWith('26.') ? 'extractRenderState' : 'render',
+    KEY_TYPE: target == '26.3' ? 'KEYBOARD' : 'KEYSYM',
+    CURRENT_SCREEN: generation == 'extractor' ? 'gui.screen()' : 'screen',
+    SET_SCREEN: generation == 'extractor' ? 'gui.setScreen' : 'setScreen',
+    SCREEN_WIDGETS: target.startsWith('26.') ? 'getWidgets' : 'getButtons',
+    MOD_SHIFT: target == '26.3' ? 'InputConstants.MOD_SHIFT' : '1',
+    MOD_CONTROL: target == '26.3' ? 'InputConstants.MOD_CONTROL' : '2',
+    TEXT_INPUT_UPDATE: target == '26.3' ? 'minecraft.textInputManager().onTextInputFocusChange(this, canvas.isEditingText());' : '',
+    TEXT_INPUT_CLOSE: target == '26.3' ? 'minecraft.textInputManager().stopTextInput(this);' : '',
+    KEY_HELPER_IMPORT: target.startsWith('26.') ? 'net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper' : 'net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper',
+    KEY_HELPER_CALL: target.startsWith('26.') ? 'KeyMappingHelper.registerKeyMapping' : 'KeyBindingHelper.registerKeyBinding',
+    KEY_CATEGORY: events ? "KeyMapping.Category.register(net.minecraft.resources.${identifier}.fromNamespaceAndPath(\"v0idpacks\", \"workshop\"))" : '"key.categories.v0idpacks"',
+    BLIT_PIPELINE: generation == 'legacy' ? 'net.minecraft.client.renderer.RenderType::guiTextured' : 'net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED',
+    CREATE_TEXTURE: target == '1.21.4' ? 'new DynamicTexture(new NativeImage(image.getWidth(), image.getHeight(), false))' : 'new DynamicTexture(() -> "v0idpacks editor", new NativeImage(image.getWidth(), image.getHeight(), false))',
+    SET_PIXEL: target == '1.21.4' ? 'pixels.setPixel(x, y, argb);' : 'pixels.setPixel(x, y, argb);'
+]
+variables.INPUT_METHODS = events ? '''
+    @Override public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) { return canvas.click(panel.mouseX(event.x()),panel.mouseY(event.y()),event.button()); }
+    @Override public boolean mouseReleased(net.minecraft.client.input.MouseButtonEvent event) { canvas.release(); return true; }
+    @Override public boolean mouseDragged(net.minecraft.client.input.MouseButtonEvent event, double dx, double dy) { return canvas.drag(panel.dragX(dx),panel.dragY(dy)); }
+    @Override public boolean keyPressed(net.minecraft.client.input.KeyEvent event) { return key(event.key(), event.modifiers()); }
+    @Override public boolean charTyped(net.minecraft.client.input.CharacterEvent event) { return canvas.type(event.codepoint()); }
+    @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) { return canvas.scroll(panel.mouseX(x),panel.mouseY(y),vertical); }
+''' : '''
+    @Override public boolean mouseClicked(double x, double y, int button) { return canvas.click(panel.mouseX(x),panel.mouseY(y),button); }
+    @Override public boolean mouseReleased(double x, double y, int button) { canvas.release(); return true; }
+    @Override public boolean mouseDragged(double x, double y, int button, double dx, double dy) { return canvas.drag(panel.dragX(dx),panel.dragY(dy)); }
+    @Override public boolean keyPressed(int key, int scan, int modifiers) { return key(key, modifiers); }
+    @Override public boolean charTyped(char character, int modifiers) { return canvas.type(character); }
+    @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) { return canvas.scroll(panel.mouseX(x),panel.mouseY(y),vertical); }
+'''
+if (target == '26.3') variables.INPUT_METHODS = variables.INPUT_METHODS.replace('event.button()', '(event.button() == InputConstants.MOUSE_BUTTON_LEFT ? 0 : -1)')
+def generated = layout.buildDirectory.dir('generated/sources/adapter')
+tasks.register('generateAdapter') {
+    inputs.dir 'src/main/templates'
+    inputs.dir 'src/smoke/templates'
+    inputs.property 'smoke', project.hasProperty('smoke')
+    inputs.properties variables
+    outputs.dir generated
+    doLast {
+        def sources = fileTree('src/main/templates').matching { include '*.java' }.files.toList()
+        def smokeOutput = generated.get().file('de/v0idpacks/fabric/SmokeClient.java').asFile
+        if (project.hasProperty('smoke')) sources.addAll(fileTree('src/smoke/templates').matching { include '*.java' }.files)
+        else if (smokeOutput.exists()) smokeOutput.delete()
+        sources.each { source ->
+            String content = source.getText('UTF-8')
+            variables.each { key, value -> content = content.replace("@${key}@", value.toString()) }
+            def out = generated.get().file("de/v0idpacks/fabric/${source.name}").asFile
+            out.parentFile.mkdirs(); out.setText(content, 'UTF-8')
+        }
+    }
+}
+sourceSets.main.java.srcDir generated
+tasks.named('compileJava') { dependsOn 'generateAdapter' }
+tasks.named('sourcesJar') { dependsOn 'generateAdapter' }
+def generatedResources = layout.buildDirectory.dir('generated/resources')
+tasks.register('generatePackMetadata') {
+    inputs.property 'minecraft', target
+    outputs.dir generatedResources
+    doLast {
+        // Loom's official cached client archive is the authoritative pack format for this build.
+        def archive = new File(gradle.gradleUserHomeDir, "caches/fabric-loom/${target}/minecraft-client.jar")
+        if (!archive.exists()) throw new GradleException("Minecraft client archive not found: ${archive}")
+        def zip = new java.util.zip.ZipFile(archive)
+        try {
+            def version = new groovy.json.JsonSlurper().parse(zip.getInputStream(zip.getEntry('version.json')))
+            def resource = version.pack_version.resource
+            def major = version.pack_version.resource_major ?: (resource instanceof Map ? resource.major : resource)
+            def minor = version.pack_version.resource_minor ?: (resource instanceof Map ? resource.minor : 0)
+            if (!(major instanceof Number) || major.intValue() <= 0) throw new GradleException("Unknown resource pack version schema: ${version.pack_version}")
+            def format = events ? [min_format: [major, minor], max_format: [major, minor]] : [pack_format: major]
+            def out = generatedResources.get().file('v0idpacks-pack-format.json').asFile
+            out.parentFile.mkdirs(); out.text = groovy.json.JsonOutput.toJson(format)
+        } finally { zip.close() }
+    }
+}
+sourceSets.main.resources.srcDir generatedResources
+tasks.named('processResources') { dependsOn 'generatePackMetadata' }
+tasks.named('sourcesJar') { dependsOn 'generatePackMetadata' }

@@ -1,0 +1,27 @@
+plugins { id 'java-library' }
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+    withSourcesJar()
+}
+tasks.withType(JavaCompile).configureEach { options.release = 21; options.encoding = 'UTF-8' }
+dependencies {
+    api 'com.google.code.gson:gson:2.11.0'
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+test { useJUnitPlatform(); systemProperty 'java.awt.headless', 'true' }
+
+// Ship the selected artwork unchanged; only display-size resampling happens at runtime.
+tasks.named('processResources') {
+    // Mod Menu reads this path from fabric.mod.json and also uses it as its default.
+    from(rootProject.file('assets/branding/v1/v0idpacks-logo.png')) {
+        rename { 'icon.png' }
+        into 'assets/v0idpacks'
+    }
+    from(rootProject.file('assets/branding/v1')) {
+        include 'v0idpacks-wordmark.png'
+        into 'assets/v0idpacks/branding'
+    }
+}
