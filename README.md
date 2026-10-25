@@ -18,7 +18,7 @@
 
 Benötigt werden **Fabric Loader ab 0.20.1** und die passende **Fabric API**. Die Build-Matrix umfasst Minecraft **1.21.4–1.21.11** und **26.1–26.3**; alle genauen Versionen stehen in [versions.json](versions.json). Für den Spielclient ist Java **21+** bei 1.21.x bzw. **25+** bei 26.x erforderlich.
 
-1. Die passende Mod-JAR [selbst bauen](#selbst-bauen) oder aus einem erfolgreichen [GitHub-Actions-Lauf](https://github.com/v0id-code/v0idpacks/actions/workflows/build.yml) herunterladen und entpacken.
+1. Die passende Mod-JAR auf [v0idpacks.de](https://v0idpacks.de/#download), aus dem [aktuellen GitHub-Release](https://github.com/v0id-code/v0idpacks/releases/latest) herunterladen oder [selbst bauen](#selbst-bauen).
 2. `v0idpacks-<Minecraft-Version>-<Mod-Version>.jar` in den `mods`-Ordner legen und ältere v0idpacks-JARs ersetzen.
 3. Minecraft starten und im Menü **v0idpacks** wählen oder in einer Welt **V** drücken.
 
@@ -49,5 +49,15 @@ bash gradlew release -PmcVersion=1.21.4
 ```
 
 Die JAR liegt anschließend unter `artifacts/<Mod-Version>/`. Der Build führt auch die Core-Tests aus. Weitere Prüfungen: [Verifikation](docs/VERIFICATION.md).
+
+## Automatische Website-Downloads
+
+Ein Push auf `main` baut und testet alle Minecraft-Versionen aus `versions.json`. Erst wenn die gesamte Matrix erfolgreich ist, veröffentlicht der Workflow `.github/workflows/build.yml` die Produktions-JARs und SHA-256-Prüfsummen als GitHub-Release. Pull Requests und andere Branches veröffentlichen nichts. Über **Run workflow** lässt sich derselbe Ablauf für `main` auch manuell starten.
+
+Die Mod-Version stammt aus `mod_version` in `gradle.properties`; diese für eine neue Produktversion anheben. Jeder veröffentlichte Build bekommt zusätzlich eine eigene Buildnummer, auch wenn die Mod-Version gleich bleibt. Bereits veröffentlichte JARs werden nicht überschrieben. Während des Uploads bleibt der Release ein Entwurf. Ein älterer Workflow-Lauf darf einen inzwischen neueren Stand auf `main` nicht als aktuell veröffentlichen.
+
+Die Website liest den aktuellen vollständigen Release automatisch aus der öffentlichen GitHub-API und bietet die JARs direkt zum Download an. Mod-Version, Buildnummer, Dateigröße und das tatsächliche Uploaddatum der ausgewählten JAR aktualisieren sich gemeinsam. Nach der einmaligen Bereitstellung des Website-Codes ist für Mod-Updates kein Website-Deployment nötig. Der Workflow verwendet das kurzlebige `GITHUB_TOKEN` mit `contents: write` nur im Veröffentlichungsjob; zusätzliche Zugangsdaten oder ein Token für das Website-Repository werden nicht benötigt.
+
+Veröffentlichungslogik lokal prüfen: `python -m unittest discover -s scripts/tests -p test_publish_release.py`. Diese Tests simulieren GitHub-Aufrufe und veröffentlichen keine echten Dateien.
 
 Fehler melden: [GitHub Issues](https://github.com/v0id-code/v0idpacks/issues). Das Projekt steht unter der [MIT-Lizenz](LICENSE).

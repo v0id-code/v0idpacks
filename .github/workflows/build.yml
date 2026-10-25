@@ -2,14 +2,37 @@ name: Build and verify Minecraft versions
 on:
   push:
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: mod-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      minecraft: ${{ steps.matrix.outputs.minecraft }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test release publication
+        run: python -m unittest discover -s scripts/tests -p 'test_publish_release.py'
+      - name: Read supported Minecraft versions
+        id: matrix
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          versions = list(json.loads(Path('versions.json').read_text()))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('minecraft=' + json.dumps(versions) + '\n')
+          PY
   build:
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
-        minecraft: ['1.21.4', '1.21.5', '1.21.6', '1.21.7', '1.21.8', '1.21.9', '1.21.10', '1.21.11', '26.1', '26.1.1', '26.1.2', '26.2', '26.3']
+        minecraft: ${{ fromJSON(needs.prepare.outputs.minecraft) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,8 +46,30 @@ jobs:
         with:
           name: v0idpacks-${{ matrix.minecraft }}
           path: artifacts/**/*.jar
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: test-report-${{ matrix.minecraft }}
           path: core/build/reports/tests/
+  publish:
+    name: Publish complete build for website downloads
+    needs: build
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      github.ref == 'refs/heads/main' &&
+      github.repository == 'v0id-code/v0idpacks'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v0idpacks-*
+          merge-multiple: true
+          path: build/website-release
+      - name: Validate and publish all JARs atomically
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/publish-release.py --artifacts build/website-release
