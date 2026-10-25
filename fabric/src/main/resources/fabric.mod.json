@@ -3,6 +3,7 @@
   "id": "v0idpacks",
   "version": "${version}",
   "name": "v0idpacks",
+  "license": "MIT",
   "icon": "assets/v0idpacks/icon.png",
   "description": "Deine Texturen. Dein Pack. Lokaler Ressourcenpaket-Editor mit Favoriten und 3D-Vorschau.",
   "environment": "client",

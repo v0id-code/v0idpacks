@@ -52,4 +52,4 @@ bash gradlew release -PmcVersion=1.21.4
 
 Die JAR liegt anschließend unter `artifacts/<Mod-Version>/`. Der Build führt auch die Core-Tests aus. Weitere Prüfungen: [Verifikation](docs/VERIFICATION.md).
 
-Fehler melden: [GitHub Issues](https://github.com/v0id-code/v0idpacks/issues). Eine Projektlizenz ist derzeit nicht hinterlegt.
+Fehler melden: [GitHub Issues](https://github.com/v0id-code/v0idpacks/issues). Das Projekt steht unter der [MIT-Lizenz](LICENSE).

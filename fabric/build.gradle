@@ -21,7 +21,10 @@ dependencies {
 }
 java { sourceCompatibility = JavaVersion.toVersion(spec.java); targetCompatibility = JavaVersion.toVersion(spec.java); withSourcesJar() }
 tasks.withType(JavaCompile).configureEach { options.release = spec.java as Integer; options.encoding = 'UTF-8' }
-tasks.named('jar') { from project(':core').sourceSets.main.output }
+tasks.named('jar') {
+    from project(':core').sourceSets.main.output
+    from rootProject.file('LICENSE')
+}
 processResources {
     inputs.property 'minecraft', target
     inputs.property 'version', project.version
