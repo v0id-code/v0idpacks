@@ -32,8 +32,6 @@ Unter **Name im Spiel** den gewünschten Pack-Namen eingeben. **PNG-Logo wählen
 
 Original-Packs bleiben unverändert. Favoriten und Projekte liegen unter `config/v0idpacks`, Exporte unter `resourcepacks`. Exportiert werden Texturen und Animationsmetadaten; Custom-Modelle, Shader und OptiFine-CIT/CTM werden nicht mit übernommen.
 
-Für den Panorama-Hintergrund müssen alle sechs Texturen `panorama_0.png` bis `panorama_5.png` unter `textures/gui/title/background` ausgewählt sein, quadratisch sein und dieselbe Auflösung haben. Unvollständige oder unterschiedlich große Panorama-Sätze werden beim Export mit einer Fehlermeldung abgewiesen. Zum Beheben alle sechs passenden Seiten auswählen oder die Panorama-Texturen aus „Mein Pack“ entfernen.
-
 ## Selbst bauen
 
 Voraussetzung: **JDK 25 oder neuer**. Der Gradle Wrapper liegt bei.
