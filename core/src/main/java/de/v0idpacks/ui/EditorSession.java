@@ -21,6 +21,7 @@ public final class EditorSession implements AutoCloseable {
     private final Map<String, String> imageErrors = new HashMap<>();
     private PackCatalog catalog;
     private LibraryStore library;
+    private BufferedImage logo;
     private UiPreferences preferences;
     private PackCatalog.Scan scan = new PackCatalog.Scan(List.of(), List.of(), List.of());
     private final JsonObject packMetadata;
@@ -54,12 +55,20 @@ public final class EditorSession implements AutoCloseable {
             try {
                 PackCatalog c = new PackCatalog(resourcepacks);
                 LibraryStore l = new LibraryStore(config);
+                BufferedImage savedLogo = null;
+                String logoWarning = "";
+                try { savedLogo = decodeLogo(l); }
+                catch (IOException e) { logoWarning = "Pack-Logo nicht lesbar. Bitte ersetzen oder entfernen."; }
+                BufferedImage initialLogo = savedLogo;
+                String initialLogoWarning = logoWarning;
                 UiPreferences prefs=new UiPreferences(config);
                 PackCatalog.Scan result = c.scan();
                 completed.add(() -> {
                     catalog = c; library = l; preferences=prefs; scan = result; busy = false;
+                    logo = initialLogo;
                     message(!l.recoveryMessage().isEmpty()?l.recoveryMessage():!prefs.warning().isEmpty()?prefs.warning():scanMessage(), !result.warnings().isEmpty()||!prefs.warning().isEmpty());
                     refilter();
+                    if (!initialLogoWarning.isEmpty()) message(initialLogoWarning, true);
                 });
             } catch (Exception e) { completed.add(() -> { busy = false; fatal = true; message("Bibliothek nicht verfügbar: " + reason(e), true); }); }
         });
@@ -94,6 +103,56 @@ public final class EditorSession implements AutoCloseable {
     public int favoriteCount() { return ready() ? library.state().favorites().size() : 0; }
     public int selectedCount() { return ready() ? library.state().selected().size() : 0; }
     public String name() { return ready() ? library.state().name() : "Mein v0idpack"; }
+    public String projectId() { return ready() ? library.projectId() : ""; }
+    public Map<String, LibraryStore.Project> projects() { return ready() ? library.projects() : Map.of(); }
+    public void createProject(String currentName) { changeProject(null, currentName); }
+    public void switchProject(String id, String currentName) { changeProject(id, currentName); }
+    private void changeProject(String id, String currentName) {
+        if (!ready() || busy) return;
+        if (currentName.strip().isEmpty()) { message("Bitte zuerst einen Pack-Namen eingeben.", true); return; }
+        busy = true; message(id == null ? "Neues Pack wird angelegt…" : "Pack wird geöffnet…", false);
+        io.execute(() -> {
+            try {
+                if (id == null) {
+                    int number = library.projects().size() + 1;
+                    Set<String> names = new HashSet<>(); library.projects().values().forEach(p -> names.add(p.name()));
+                    String name; do { name = "Mein v0idpack " + number++; } while (names.contains(name));
+                    library.createProject(name, currentName);
+                } else library.switchProject(id, currentName);
+                BufferedImage loaded = null;
+                String warning = "";
+                try { loaded = decodeLogo(library); }
+                catch (IOException e) { warning = "Pack geöffnet. Logo nicht lesbar; bitte ersetzen oder entfernen."; }
+                BufferedImage nextLogo = loaded; String logoWarning = warning;
+                completed.add(() -> {
+                    logo = nextLogo; busy = false; focus(null);
+                    filter(Tab.SELECTED, "", "");
+                    message(logoWarning.isEmpty() ? "„" + name() + "“ zum Bearbeiten geöffnet. Änderungen werden lokal gespeichert." : logoWarning, !logoWarning.isEmpty());
+                });
+            } catch (Exception e) { completed.add(() -> { busy = false; message(reason(e), true); }); }
+        });
+    }
+    public BufferedImage logo() { return logo; }
+    public boolean hasLogo() { return ready() && !library.state().logo().isEmpty(); }
+    private static BufferedImage decodeLogo(LibraryStore store) throws IOException {
+        byte[] png = store.readLogo(store.state());
+        return png.length == 0 ? null : TextureImage.decode(new PackCatalog.Data(png, new byte[0])).frame();
+    }
+    public void importLogo(Path file) {
+        importLogo(file, projectId());
+    }
+    public void importLogo(Path file, String expectedProject) {
+        if (!projectId().equals(expectedProject)) { message("Pack wurde gewechselt. Bitte das Logo erneut auswählen.", true); return; }
+        run("Logo wird gespeichert…", () -> {
+            library.importLogo(file);
+            BufferedImage image = decodeLogo(library);
+            completed.add(() -> logo = image);
+        }, "Pack-Logo gespeichert. Beim nächsten Export wird es übernommen.");
+    }
+    public void removeLogo() {
+        run("Logo wird entfernt…", () -> { library.removeLogo(); completed.add(() -> logo = null); }, "Pack-Logo entfernt.");
+    }
+    public void logoSelectionFailed(String reason) { message("Logo konnte nicht ausgewählt werden: " + reason, true); }
     public boolean isFavorite(TextureRef ref) { return ready() && library.state().favorites().containsKey(ref.key()); }
     public boolean isSelected(TextureRef ref) {
         if (!ready()) return false;
@@ -210,10 +269,15 @@ public final class EditorSession implements AutoCloseable {
         run("Name wird gespeichert…", () -> library.rename(name), "Pack-Name gespeichert.");
     }
     public void export(boolean apply) {
+        export(apply, name());
+    }
+    public void export(boolean apply, String name) {
         if (!ready() || busy) return;
+        if (name.strip().isEmpty()) { message("Bitte einen Pack-Namen eingeben.", true); return; }
         busy = true; message("Pack wird exportiert…", false);
         io.execute(() -> {
             try {
+                if (!name.strip().equals(library.state().name())) library.rename(name);
                 Path result = PackExporter.export(library, catalog.root(), packMetadata);
                 completed.add(() -> {
                     if (apply) {

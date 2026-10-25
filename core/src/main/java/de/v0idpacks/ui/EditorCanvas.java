@@ -23,6 +23,7 @@ public final class EditorCanvas {
                              ArmorPart armor, ToolType tool, boolean packs, int page, boolean ready) {}
     private final EditorSession session;
     private final Runnable close;
+    private Runnable chooseLogo = () -> {};
     private final LongSupplier clock;
     private final UiMotion motion;
     private final PreviewRenderer renderer = new PreviewRenderer();
@@ -42,12 +43,19 @@ public final class EditorCanvas {
     private boolean dirty = true, allTextSelected, dragging;
     private boolean allTextures;
     private boolean categoryMenu;
+    private boolean nameEdited;
+    private boolean projectsMenu;
+    private int projectPage;
+    private String editingProject = "";
     private int categoryIndex;
     private Rectangle viewport = new Rectangle();
     private double yaw = -.48, pitch = .25, zoom = 1;
     private double renderedYaw, renderedPitch, renderedZoom;
 
     public EditorCanvas(EditorSession session, Runnable close) { this(session,close,System::nanoTime); }
+    public EditorCanvas(EditorSession session, Runnable close, Runnable chooseLogo) {
+        this(session, close); this.chooseLogo = chooseLogo;
+    }
     EditorCanvas(EditorSession session, Runnable close, LongSupplier clock) {
         this.session=session;this.close=close;this.clock=clock;motion=new UiMotion(clock);
         animationsEnabled=session.ready()&&session.animationsEnabled();
@@ -67,6 +75,10 @@ public final class EditorCanvas {
     /** null means the GPU texture can be reused this frame. */
     public BufferedImage draw() {
         session.poll();
+        if (session.ready() && !session.busy() && !editingProject.equals(session.projectId())) {
+            editingProject = session.projectId(); nameEdited = false; nameDraft = session.name();
+            projectsMenu = false; focus = ""; scroll = 0; dirty = true;
+        }
         boolean enabled=session.ready()&&session.animationsEnabled();
         if(animationsEnabled!=enabled){animationsEnabled=enabled;dirty=true;}
         motion.setEnabled(enabled);
@@ -95,6 +107,9 @@ public final class EditorCanvas {
         nav(g, "all", "Bibliothek", "Packs", EditorSession.Tab.ALL, 80);
         nav(g, "favorites", "Favoriten", Integer.toString(session.favoriteCount()), EditorSession.Tab.FAVORITES, 120);
         nav(g, "selected", "Mein Pack", Integer.toString(session.selectedCount()), EditorSession.Tab.SELECTED, 160);
+        button(g, "projects", "Packs verwalten", 12, 202, 120, 24, session.ready() && !session.busy(), false, () -> {
+            projectsMenu = true; categoryMenu = false; projectPage = 0; focus = "new-project"; dirty = true;
+        });
         text(g, session.packs().size() + " Packs installiert", 14, 236, SMALL, MUTED);
         button(g, "refresh", "Neu einlesen", 12, 248, 120, 30, session.ready() && !session.busy(), false, session::refresh);
         button(g,"animations","Animationen: "+(session.animationsEnabled()?"An":"Aus"),12,288,120,28,session.ready()&&!session.busy(),false,session::toggleAnimations);
@@ -103,7 +118,7 @@ public final class EditorCanvas {
 
         boolean armor=session.tab()==EditorSession.Tab.ALL&&session.categoryFilter()==TextureCategory.ARMOR;
         boolean tools=session.tab()==EditorSession.Tab.ALL&&session.categoryFilter()==TextureCategory.TOOLS;
-        String title = switch(session.tab()) { case ALL -> showingPacks()?"Deine Texturepacks":session.categoryFilter()!=TextureCategory.ALL?session.categoryFilter().label():session.packFilter().isEmpty()?"Alle Texturen":session.packName(session.packFilter()); case FAVORITES -> "Deine Favoriten"; case SELECTED -> "Dein eigenes Pack"; };
+        String title = switch(session.tab()) { case ALL -> showingPacks()?"Deine Texturepacks":session.categoryFilter()!=TextureCategory.ALL?session.categoryFilter().label():session.packFilter().isEmpty()?"Alle Texturen":session.packName(session.packFilter()); case FAVORITES -> "Deine Favoriten"; case SELECTED -> session.name(); };
         if(armor&&session.armorPartFilter()!=ArmorPart.ALL)title+=" · "+session.armorPartFilter().label();
         if(tools&&session.toolTypeFilter()!=ToolType.ALL)title+=" · "+session.toolTypeFilter().label();
         text(g, clip(g,title,contentW,TITLE), contentX, 32, TITLE, TEXT);
@@ -160,6 +175,7 @@ public final class EditorCanvas {
         text(g, clip(g, status, width - sidebar - 28, SMALL), contentX, bottom + 17, SMALL, session.error() ? ERROR : MUTED);
         text(g, "F: Favorit   ·   Leertaste: Auswahl   ·   Tab: Navigation   ·   Esc: Schließen", contentX, bottom + 33, SMALL, MUTED);
         if(categoryMenu&&library)categoryDropdown(g,contentX,182,Math.min(contentW,400));
+        if(projectsMenu)projectDialog(g);
         g.dispose();
         float opening=motion.progress(OPEN,frameTime);
         motion.finishFrame(frameTime);
@@ -170,6 +186,37 @@ public final class EditorCanvas {
         // Alpha only: positions, glyphs and hit targets stay on their native pixels.
         openingGraphics.setComposite(AlphaComposite.Src.derive(.2f+.8f*opening));
         openingGraphics.drawImage(image,0,0,null);openingGraphics.dispose();return openingImage;
+    }
+    private int projectPageSize() { return Math.max(1, (Math.min(height - 48, 440) - 160) / 48); }
+    private void projectDialog(Graphics2D g) {
+        fill(g, 0, 0, width, height, new Color(0,0,0,175));
+        int w = Math.min(480, width - 48), h = Math.min(height - 48, 440), x = (width-w)/2, y = (height-h)/2;
+        fill(g,x,y,w,h,SURFACE); outline(g,x,y,w,h,BORDER);
+        hits.clear(); // Modal controls exclusively own mouse and keyboard focus.
+        text(g,"Meine Packs",x+20,y+32,TITLE,TEXT);
+        text(g,"Ein Pack wählen, um es weiterzubearbeiten.",x+20,y+54,SMALL,MUTED);
+        var projects = new ArrayList<>(session.projects().entrySet());
+        int size = projectPageSize(), pages = Math.max(1,(projects.size()+size-1)/size);
+        projectPage = Math.clamp(projectPage,0,pages-1);
+        for (int i=projectPage*size;i<Math.min(projects.size(),(projectPage+1)*size);i++) {
+            var entry=projects.get(i); var project=entry.getValue(); int rowY=y+70+(i%size)*48;
+            boolean selected=entry.getKey().equals(session.projectId());
+            fill(g,x+20,rowY,w-40,42,selected?SECONDARY:BG);
+            text(g,clip(g,project.name(),w-160,LABEL),x+30,rowY+17,LABEL,TEXT);
+            text(g,project.selected().size()+" Texturen"+(project.logo().isEmpty()?"":" · mit Logo"),x+30,rowY+33,SMALL,MUTED);
+            text(g,selected?"Geöffnet":"Bearbeiten",x+w-104,rowY+25,SMALL,selected?ACCENT:MUTED);
+            hit(g,new Hit("project:"+entry.getKey(),project.name()+" bearbeiten",new Rectangle(x+20,rowY,w-40,42),!session.busy(),()->{
+                if (selected) { projectsMenu=false;focus="projects";dirty=true; }
+                else session.switchProject(entry.getKey(),draftName());
+            }));
+        }
+        int navigationY=y+h-86;
+        button(g,"projects-prev","‹",x+20,navigationY,32,24,projectPage>0&&!session.busy(),false,()->{projectPage--;dirty=true;});
+        text(g,(projectPage+1)+" / "+pages,x+62,navigationY+17,SMALL,MUTED);
+        button(g,"projects-next","›",x+110,navigationY,32,24,projectPage+1<pages&&!session.busy(),false,()->{projectPage++;dirty=true;});
+        text(g,clip(g,session.error()?session.status():"Name und Auswahl bleiben beim Wechsel erhalten.",w-40,SMALL),x+20,y+h-48,SMALL,session.error()?ERROR:MUTED);
+        button(g,"new-project","Neues Pack",x+20,y+h-38,144,26,!session.busy(),true,()->session.createProject(draftName()));
+        button(g,"projects-close","Zurück",x+w-110,y+h-38,90,26,!session.busy(),false,()->{projectsMenu=false;focus="projects";dirty=true;});
     }
     private void nav(Graphics2D g, String id, String label, String count, EditorSession.Tab tab, int y) {
         boolean selected = session.tab() == tab;
@@ -258,7 +305,7 @@ public final class EditorCanvas {
         text(g, "VORSCHAU", x + p, y + 18, SMALL, MUTED);
         TextureRef ref = session.focused();
         text(g, clip(g, ref == null ? "Wähle eine Textur" : ref.name(), w - 24, LABEL), x + p, y + 40, LABEL, TEXT);
-        int viewportHeight = Math.clamp(height-390,60,250);
+        int viewportHeight = Math.clamp(height-450,24,220);
         viewport = new Rectangle(x + p, y + 54, w - 24, viewportHeight);
         checker(g, viewport.x, viewport.y, viewport.width, viewport.height);
         if (session.preview() != null) {
@@ -292,29 +339,36 @@ public final class EditorCanvas {
             if (!session.previewError().isEmpty()) text(g, clip(g, session.previewError(), w - 32, SMALL), x + p, viewport.y + viewport.height + 21, SMALL, ERROR);
         }
         hit(g, new Hit("viewport", "3D-Vorschau. Ziehen oder Pfeiltasten zum Drehen, Mausrad zum Zoomen.", viewport, ref != null, () -> {}));
-        int controls = viewport.y + viewport.height + 30;
+        boolean compact = height < 520;
+        int controls = viewport.y + viewport.height + (compact ? 26 : 30);
         String[] modes = { "Auto", "Item", "Würfel", "2D" };
         PreviewRenderer.Mode[] values={PreviewRenderer.Mode.AUTO,PreviewRenderer.Mode.ITEM,PreviewRenderer.Mode.CUBE,PreviewRenderer.Mode.FLAT};
         for (int i = 0; i < 4; i++) {
             PreviewRenderer.Mode next = values[i];
             button(g, "mode" + i, modes[i], x + p + i * 65, controls, 61, 26, ref != null, mode == next, () -> { mode = next; dirty = true; });
         }
-        text(g, ref!=null&&ref.path().equals(ModelLoader.CRYSTAL_ITEM)&&session.previewModel()!=null?"3D: Entity-Textur · 2D: Inventar-Icon":"Ziehen: drehen · Mausrad: zoomen", x + p, controls + 44, SMALL, MUTED);
-        int buttonsY = controls + 54;
+        if (!compact) text(g, ref!=null&&ref.path().equals(ModelLoader.CRYSTAL_ITEM)&&session.previewModel()!=null?"3D: Entity-Textur · 2D: Inventar-Icon":"Ziehen: drehen · Mausrad: zoomen", x + p, controls + 44, SMALL, MUTED);
+        int buttonsY = controls + (compact ? 28 : 54);
         boolean enabled = ref != null && session.ready() && !session.busy();
-        button(g, "favorite", ref != null && session.isFavorite(ref) ? "★  Favorit gespeichert" : "☆  Als Favorit speichern", x + p, buttonsY, w - 24, 28, enabled, false, session::favorite);
+        button(g, "favorite", ref != null && session.isFavorite(ref) ? "★  Favorit gespeichert" : "☆  Als Favorit speichern", x + p, buttonsY, w - 24, compact ? 24 : 28, enabled, false, session::favorite);
         String select = ref != null && session.isSelected(ref) ? "Aus Pack entfernen" : ref != null && session.replacesOther(ref) ? "Vorhandene Textur ersetzen" : "In mein Pack übernehmen";
-        button(g, "select", select, x + p, buttonsY + 34, w - 24, 30, enabled, true, session::select);
-        if (ref != null && height>=600) {
+        button(g, "select", select, x + p, buttonsY + (compact ? 28 : 34), w - 24, compact ? 24 : 30, enabled, true, session::select);
+        if (ref != null && height>=700) {
             text(g, clip(g, ref.path(), w - 24, SMALL), x + p, buttonsY + 82, SMALL, MUTED);
         }
         // Export controls occupy their own panel, above the global status line.
-        int footerY = height - 112;
-        fill(g, x, footerY, w, 68, BG);
-        input(g, "name", "Pack-Name", focus.equals("name") ? nameDraft : session.name(), x, footerY, w - 48, 28);
-        button(g, "rename", "OK", x + w - 42, footerY, 42, 28, session.ready() && !session.busy(), false, () -> session.rename(nameDraft.isEmpty() ? session.name() : nameDraft));
-        button(g, "export", "Exportieren", x, footerY + 34, 100, 30, session.selectedCount() > 0 && !session.busy(), false, () -> session.export(false));
-        button(g, "activate", "Speichern & aktivieren", x + 106, footerY + 34, w - 106, 30, session.selectedCount() > 0 && !session.busy(), true, () -> session.export(true));
+        int footerY = height - 166;
+        fill(g, x, footerY - 18, w, 140, BG);
+        text(g, "NAME IM SPIEL", x, footerY - 5, SMALL, MUTED);
+        input(g, "name", "Pack-Name", draftName(), x, footerY, w - 48, 28);
+        button(g, "rename", "OK", x + w - 42, footerY, 42, 28, session.ready() && !session.busy(), false, () -> session.rename(draftName()));
+        checker(g, x, footerY + 36, 40, 40);
+        if (session.logo() != null) g.drawImage(session.logo(), x, footerY + 36, 40, 40, null);
+        button(g, "logo", session.hasLogo() ? "Logo ändern…" : "PNG-Logo wählen…", x + 48, footerY + 36, w - 48, 24, session.ready() && !session.busy(), false, chooseLogo);
+        if (session.hasLogo()) button(g, "remove-logo", "Logo entfernen", x + 48, footerY + 62, w - 48, 20, !session.busy(), false, session::removeLogo);
+        else text(g, "Quadratisches PNG", x + 48, footerY + 76, SMALL, MUTED);
+        button(g, "export", "Exportieren", x, footerY + 88, 100, 30, session.selectedCount() > 0 && !session.busy(), false, () -> session.export(false, draftName()));
+        button(g, "activate", "Speichern & aktivieren", x + 106, footerY + 88, w - 106, 30, session.selectedCount() > 0 && !session.busy(), true, () -> session.export(true, draftName()));
     }
     private void input(Graphics2D g, String id, String placeholder, String value, int x, int y, int w, int h) {
         fill(g, x, y, w, h, BG); outline(g, x, y, w, h, focus.equals(id) ? ACCENT : MUTED);
@@ -322,7 +376,7 @@ public final class EditorCanvas {
         String visible = clip(g, value.isEmpty() ? placeholder : value, w - 22, BODY);
         text(g, visible, x + 10, y + h / 2 + 5, BODY, value.isEmpty() ? MUTED : TEXT);
         if (focus.equals(id) && !allTextSelected) { int caret = x + 11 + FormattedText.width(g,visible,BODY); line(g, caret, y + 9, caret, y + h - 9, ACCENT); }
-        hit(g, new Hit(id, placeholder, new Rectangle(x,y,w,h), session.ready(), () -> { if (id.equals("name")) nameDraft = session.name(); allTextSelected = false; }));
+        hit(g, new Hit(id, placeholder, new Rectangle(x,y,w,h), session.ready(), () -> { if (id.equals("name") && !nameEdited) nameDraft = session.name(); allTextSelected = false; }));
     }
     private void button(Graphics2D g, String id, String label, int x, int y, int w, int h, boolean enabled, boolean primary, Runnable action) {
         button(g,id,label,x,y,w,h,enabled,primary,action,BODY);
@@ -366,11 +420,12 @@ public final class EditorCanvas {
         focus = categoryMenu ? "category" : "";categoryMenu=false; dirty = true; return true;
     }
     public boolean drag(double dx, double dy) {
-        if (!dragging || mode == PreviewRenderer.Mode.FLAT) return false;
+        if (projectsMenu || !dragging || mode == PreviewRenderer.Mode.FLAT) return false;
         yaw += dx * .012; pitch = Math.clamp(pitch + dy * .012, -1.5, 1.5); dirty = true; return true;
     }
     public void release() { dragging = false; }
     public boolean scroll(int x, int y, double amount) {
+        if (projectsMenu) { projectPage=Math.clamp(projectPage-(int)Math.signum(amount),0,Math.max(0,(session.projects().size()-1)/projectPageSize()));dirty=true;return true; }
         if(categoryMenu){categoryIndex=Math.floorMod(categoryIndex-(int)Math.signum(amount),TextureCategory.values().length);focus="category-option:"+categoryIndex;dirty=true;return true;}
         if (viewport.contains(x,y)) { zoom = Math.clamp(zoom + amount * .12, .4, 2.5); dirty = true; return true; }
         int count=showingPacks()?session.visiblePacks().size():session.visible().size();
@@ -378,12 +433,14 @@ public final class EditorCanvas {
         dirty = true; return true;
     }
     public boolean type(int codepoint) {
+        if (projectsMenu) return true;
         if (!focus.equals("search") && !focus.equals("name")) return false;
         if (!Character.isValidCodePoint(codepoint) || Character.isISOControl(codepoint)) return false;
         String value = allTextSelected ? "" : currentText();
         setText(value + new String(Character.toChars(codepoint))); allTextSelected = false; return true;
     }
     public boolean key(int key, boolean shift, boolean control, String clipboard, Consumer<String> copy) {
+        if (projectsMenu && key==256) { if(!session.busy()){projectsMenu=false;focus="projects";dirty=true;}return true; }
         if(categoryMenu) {
             if(key==256){categoryMenu=false;focus="category";dirty=true;return true;}
             if(key==257||key==335||key==32){chooseCategory(TextureCategory.values()[categoryIndex]);return true;}
@@ -395,8 +452,12 @@ public final class EditorCanvas {
             List<Hit> enabled = hits.stream().filter(Hit::enabled).toList(); if (enabled.isEmpty()) return true;
             int index = -1; for(int i=0;i<enabled.size();i++) if(enabled.get(i).id.equals(focus)) index=i;
             focus = enabled.get(Math.floorMod(index + (shift ? -1 : 1), enabled.size())).id;
-            if (focus.equals("name")) nameDraft = session.name();
+            if (focus.equals("name") && !nameEdited) nameDraft = session.name();
             dirty = true; return true;
+        }
+        if (projectsMenu) {
+            if (key==257 || key==335 || key==32) hits.stream().filter(h->h.enabled&&h.id.equals(focus)).findFirst().ifPresent(this::activate);
+            dirty=true;return true;
         }
         if (focus.equals("search") || focus.equals("name")) {
             String value = currentText();
@@ -425,6 +486,7 @@ public final class EditorCanvas {
         return false;
     }
     private String currentText() { return focus.equals("search") ? session.query() : nameDraft; }
+    private String draftName() { return nameEdited ? nameDraft : session.name(); }
     private void activate(Hit hit){pressed=hit.id;motion.start(PRESS);hit.action.run();}
     private static void alpha(Graphics2D g,float opacity) {
         float current=g.getComposite() instanceof AlphaComposite composite?composite.getAlpha():1;
@@ -434,7 +496,7 @@ public final class EditorCanvas {
         int max = focus.equals("name") ? 64 : 160;
         value = value.substring(0, Math.min(value.length(), max));
         if (focus.equals("search")) { session.search(value); scroll = 0; }
-        else nameDraft = value;
+        else { nameDraft = value; nameEdited = true; }
         dirty = true;
     }
     private static void checker(Graphics2D g, int x, int y, int w, int h) {

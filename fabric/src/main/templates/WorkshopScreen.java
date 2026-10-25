@@ -24,7 +24,7 @@ public final class WorkshopScreen extends Screen {
     private boolean textInput;
     int renderedFrames;
     public WorkshopScreen(Screen parent, EditorSession session) {
-        super(Component.literal("v0idpacks")); this.parent = parent; this.canvas = new EditorCanvas(session, this::onClose);
+        super(Component.literal("v0idpacks")); this.parent = parent; this.canvas = new EditorCanvas(session, this::onClose, () -> LogoPicker.show(session));
     }
     @Override protected void init() {
         panel = PanelLayout.fit(width,height,minecraft.getWindow().getWidth(),minecraft.getWindow().getHeight());

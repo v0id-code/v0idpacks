@@ -11,7 +11,10 @@ Die Build-Matrix steht in [versions.json](../versions.json). Jede Minecraft-Vers
 Die JUnit-Suite prüft unter anderem:
 
 - Persistenz, Favoriten, Variantenersetzung und entfernte Quell-Packs;
+- Pack-Name und Logo: alte Projektdateien, lokale PNG-Kopie, Validierung, Ersetzen/Entfernen, Export ohne vorheriges OK und unveränderte frühere Exporte;
+- Mehrere Projekte: Wechsel, unabhängige Texturauswahl und Logos, gemeinsame Favoriten, Migration, Sicherung/Wiederherstellung und getrennte Exporte bei gleichen Namen;
 - ZIP- und Pfadvalidierung, beschädigte Daten und Animationsmetadaten;
+- Panorama-Export: vollständige Sätze, quadratische Seiten mit gleicher Auflösung, Erhalt bestehender Exporte bei Fehlern und Abbruch vor der Aktivierung;
 - Pack-Informationen, Minecraft-Formatierungen und Texturkategorien;
 - Rüstungs- und Werkzeugfilter, Suche und Tastaturbedienung;
 - Modellvorschauen, Rendering, UI-Einstellungen und Animationen.
@@ -44,6 +47,8 @@ Der Artefaktprüfer kontrolliert ZIP-Integrität, Mod-Version, Client-Umgebung, 
 ```
 
 Dieser Aufruf startet Minecraft in einer separaten Entwicklungsinstanz unter `run/1.21.4-smoke`. Der Test erstellt dort eigene Testdaten, öffnet den Editor, prüft Favoriten, Auswahl, Export und Aktivierung und beendet den Client anschließend. Die Erfolgsmeldung im Log lautet `V0IDPACKS_SMOKE_PASS`.
+
+Dabei werden auch der tatsächliche Titel im Minecraft-Pack-Repository, das exportierte `pack.png` und die gespeicherten Pack-Einstellungen geprüft. Der Test legt außerdem ein zweites Projekt an, aktiviert beide und bearbeitet das erste erneut: genau ein Export pro Projekt muss aktiv bleiben. Die native Dateiauswahl wird manuell über **PNG-Logo wählen…** geprüft.
 
 Der Smoke-Entrypoint wird ausschließlich mit `-Psmoke` eingebunden. Normale Builds enthalten ihn nicht; der `release`-Task lehnt `-Psmoke` ab.
 

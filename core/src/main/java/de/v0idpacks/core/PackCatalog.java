@@ -22,7 +22,10 @@ public final class PackCatalog {
         this.root = root.toRealPath();
     }
     public Path root() { return root; }
-    public static boolean isGeneratedPack(String name) { return name.matches("v0idpacks-custom-[a-f0-9]{32}\\.zip"); }
+    public static boolean isGeneratedPack(String name) {
+        return name.matches("v0idpacks-custom-[a-f0-9]{32}\\.zip")
+                || name.matches("[^/\\\\]+ \\[v0idpacks-[a-f0-9]{32}\\]\\.zip");
+    }
 
     public Scan scan() throws IOException {
         List<TextureRef> textures = new ArrayList<>();

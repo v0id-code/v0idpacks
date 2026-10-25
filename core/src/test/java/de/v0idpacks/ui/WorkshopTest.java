@@ -41,6 +41,33 @@ class WorkshopTest {
     private void await() {
         assertTimeoutPreemptively(Duration.ofSeconds(10),()->{do {Thread.sleep(10);session.poll();}while(session.busy());});
     }
+    @Test void invalidPanoramaShowsExportErrorAndNeverActivates() throws Exception {
+        Path packs = temp.resolve("resourcepacks");
+        String face = "assets/minecraft/textures/gui/title/background/panorama_0.png";
+        Path source = packs.resolve("Panorama");
+        Files.createDirectories(source.resolve(face).getParent());
+        Files.writeString(source.resolve("pack.mcmeta"), "{\"pack\":{\"pack_format\":46,\"description\":\"Test\"}}");
+        ImageIO.write(new BufferedImage(16,16,BufferedImage.TYPE_INT_ARGB), "png", source.resolve(face).toFile());
+        new LibraryStore(temp.resolve("config")).select(new TextureRef("Panorama",face,""),new PackCatalog(packs));
+        int[] activations = {0};
+        JsonObject metadata = new JsonObject(); metadata.addProperty("pack_format",46);
+        session = new EditorSession(packs,temp.resolve("config"),metadata,path -> {
+            activations[0]++;
+            session.activationFinished(null);
+        });
+        await();
+        for (boolean apply : new boolean[]{false,true}) {
+            session.export(apply); await();
+            assertTrue(session.error());
+            assertTrue(session.status().contains("panorama_1.png fehlt"));
+            assertFalse(session.busy());
+            assertEquals(1,session.selectedCount());
+        }
+        assertEquals(0,activations[0]);
+        try (var files = Files.list(packs)) {
+            assertFalse(files.anyMatch(path -> path.toString().endsWith(".zip") || path.toString().endsWith(".tmp")));
+        }
+    }
     @Test void browserSearchFavoritesSelectionAndExportSurviveReopening() throws Exception {
         prepare();assertEquals(18,session.visible().size());
         EditorCanvas canvas=new EditorCanvas(session,()->{});canvas.draw();
@@ -71,6 +98,61 @@ class WorkshopTest {
         session.filter(EditorSession.Tab.SELECTED,"","");ImageIO.write(canvas.draw(),"png",dir.resolve("selected.png").toFile());
         session.filter(EditorSession.Tab.ALL,"no-match","");ImageIO.write(canvas.draw(),"png",dir.resolve("empty-search.png").toFile());
         session.filter(EditorSession.Tab.SELECTED,"","");canvas.resize(800,480);ImageIO.write(canvas.draw(),"png",dir.resolve("small-window.png").toFile());
+    }
+    @Test void editedNameExportsWithoutOkAndLogoSurvivesReopening() throws Exception {
+        prepare(); session.focus(session.visible().getFirst()); session.select(); await();
+        Path logo = temp.resolve("my-logo.png"); ImageIO.write(sword(0xff29addd), "png", logo.toFile());
+        int[] choices = {0};
+        EditorCanvas canvas = new EditorCanvas(session, () -> {}, () -> { choices[0]++; session.importLogo(logo); });
+        canvas.draw(); canvas.click(900,540,0); await(); canvas.draw();
+        assertEquals(1, choices[0]); assertTrue(session.hasLogo()); assertNotNull(session.logo());
+        canvas.click(870,505,0); canvas.key(65,false,true,"",s -> {});
+        for (char c : "Mein Über-Pack".toCharArray()) canvas.type(c);
+        canvas.draw(); canvas.click(870,595,0); await();
+        assertEquals("Mein Über-Pack", session.name()); assertFalse(session.error());
+        canvas.draw(); canvas.click(870,505,0);
+        assertTrue(canvas.narration().contains("Pack-Name"));
+        Path dir=Path.of("build/previews"); Files.createDirectories(dir);
+        ImageIO.write(canvas.draw(), "png", dir.resolve("pack-identity.png").toFile());
+        canvas.resize(760,440); ImageIO.write(canvas.draw(), "png", dir.resolve("pack-identity-small.png").toFile());
+        session.close(); Files.delete(logo);
+        JsonObject metadata = new JsonObject(); metadata.addProperty("pack_format",46);
+        session = new EditorSession(temp.resolve("resourcepacks"),temp.resolve("config"),metadata,path -> {}); await();
+        assertEquals("Mein Über-Pack", session.name()); assertNotNull(session.logo());
+        session.removeLogo(); await(); assertNull(session.logo()); assertFalse(session.hasLogo());
+    }
+    @Test void emptyNameDoesNotSilentlyExportOldName() throws Exception {
+        prepare(); session.focus(session.visible().getFirst()); session.select(); await();
+        EditorCanvas canvas = new EditorCanvas(session, () -> {}); canvas.draw();
+        canvas.click(870,505,0); canvas.key(65,false,true,"",s -> {}); canvas.key(259,false,false,"",s -> {});
+        canvas.draw(); canvas.click(870,595,0); await();
+        assertTrue(session.error()); assertTrue(session.status().contains("Pack-Namen"));
+        try (var files = Files.list(temp.resolve("resourcepacks"))) { assertFalse(files.anyMatch(p -> p.toString().endsWith(".zip"))); }
+    }
+    @Test void projectManagerCreatesSwitchesAndPreservesNameDraft() throws Exception {
+        prepare(); session.focus(session.visible().getFirst());session.select();await();
+        String first=session.projectId();
+        EditorCanvas canvas=new EditorCanvas(session,()->{});canvas.draw();
+        canvas.click(870,505,0);canvas.key(65,false,true,"",s->{});
+        for(char c:"Mein erstes Pack".toCharArray())canvas.type(c);
+        canvas.draw();canvas.click(60,212,0);canvas.draw();
+        // New pack has keyboard focus; the modal blocks the global selection shortcut.
+        canvas.key(257,false,false,"",s->{});await();canvas.draw();
+        String second=session.projectId();assertNotEquals(first,second);assertEquals(0,session.selectedCount());
+        assertEquals(EditorSession.Tab.SELECTED,session.tab());assertNull(session.focused());
+        assertEquals("Mein erstes Pack",session.projects().get(first).name());
+        canvas.click(60,212,0);canvas.draw();canvas.click(420,200,0);await();canvas.draw();
+        assertEquals(first,session.projectId());assertEquals("Mein erstes Pack",session.name());assertEquals(1,session.selectedCount());
+        assertEquals("Mein v0idpack 2",session.projects().get(second).name());
+        session.importLogo(temp.resolve("missing.png"),second);assertTrue(session.error());assertFalse(session.hasLogo());
+        canvas.click(60,212,0);canvas.draw();
+        Path dir=Path.of("build/previews");Files.createDirectories(dir);
+        canvas.resize(760,440);ImageIO.write(canvas.draw(),"png",dir.resolve("project-manager-small.png").toFile());
+        canvas.key(256,false,false,"",s->{});canvas.draw();
+        session.createProject(session.name());await();canvas.draw();
+        assertEquals(3,session.projects().size());
+        LibraryStore reopened=new LibraryStore(temp.resolve("config"));assertEquals(session.projectId(),reopened.projectId());
+        assertEquals("Mein erstes Pack",reopened.projects().get(first).name());
     }
     @Test void previewHasTransparentSilhouetteAndChangesWhenRotated() {
         PreviewRenderer renderer=new PreviewRenderer();BufferedImage source=sword(0xff3dc5c0);

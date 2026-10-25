@@ -24,6 +24,50 @@ def variables = [
     CREATE_TEXTURE: target == '1.21.4' ? 'new DynamicTexture(new NativeImage(image.getWidth(), image.getHeight(), false))' : 'new DynamicTexture(() -> "v0idpacks editor", new NativeImage(image.getWidth(), image.getHeight(), false))',
     SET_PIXEL: target == '1.21.4' ? 'pixels.setPixel(x, y, argb);' : 'pixels.setPixel(x, y, argb);'
 ]
+variables.LOGO_PICKER = target == '26.3' ? '''
+    private static org.lwjgl.sdl.SDL_DialogFileCallback active;
+    static void show(EditorSession session) {
+        if (active != null) return;
+        String project = session.projectId();
+        var filters = org.lwjgl.sdl.SDL_DialogFileFilter.calloc(1);
+        var label = org.lwjgl.system.MemoryUtil.memUTF8("PNG-Bild (quadratisch)");
+        var pattern = org.lwjgl.system.MemoryUtil.memUTF8("png");
+        filters.get(0).name(label).pattern(pattern);
+        active = new org.lwjgl.sdl.SDL_DialogFileCallback() {
+            @Override public void invoke(long userdata, long filelist, int filter) {
+                // SDL owns the list only for this callback. Copy before returning to the game thread.
+                long first = filelist == 0 ? 0 : org.lwjgl.system.MemoryUtil.memGetAddress(filelist);
+                String path = first == 0 ? null : org.lwjgl.system.MemoryUtil.memUTF8(first);
+                Minecraft.getInstance().execute(() -> {
+                    try {
+                        if (filelist == 0) session.logoSelectionFailed("Die Dateiauswahl ist nicht verfügbar.");
+                        else if (path != null) session.importLogo(Path.of(path), project);
+                    } catch (RuntimeException e) { session.logoSelectionFailed(e.getMessage()); }
+                    finally {
+                        filters.free(); org.lwjgl.system.MemoryUtil.memFree(label); org.lwjgl.system.MemoryUtil.memFree(pattern);
+                        active = null; free();
+                    }
+                });
+            }
+        };
+        // Filters and callback must remain alive until SDL invokes the asynchronous callback.
+        try {
+            org.lwjgl.sdl.SDLDialog.SDL_ShowOpenFileDialog(active, 0, Minecraft.getInstance().getWindow().handle(), filters, (String)null, false);
+        } catch (RuntimeException e) {
+            active.free(); active = null; filters.free();
+            org.lwjgl.system.MemoryUtil.memFree(label); org.lwjgl.system.MemoryUtil.memFree(pattern);
+            session.logoSelectionFailed(e.getMessage());
+        }
+    }
+''' : '''
+    static void show(EditorSession session) {
+        try (var stack = org.lwjgl.system.MemoryStack.stackPush()) {
+            String file = org.lwjgl.util.tinyfd.TinyFileDialogs.tinyfd_openFileDialog(
+                    "Pack-Logo auswählen", "", stack.pointers(stack.UTF8("*.png")), "PNG-Bild (quadratisch)", false);
+            if (file != null) session.importLogo(Path.of(file));
+        } catch (RuntimeException e) { session.logoSelectionFailed(e.getMessage()); }
+    }
+'''
 variables.INPUT_METHODS = events ? '''
     @Override public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) { return canvas.click(panel.mouseX(event.x()),panel.mouseY(event.y()),event.button()); }
     @Override public boolean mouseReleased(net.minecraft.client.input.MouseButtonEvent event) { canvas.release(); return true; }

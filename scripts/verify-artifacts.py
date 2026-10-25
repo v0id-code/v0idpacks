@@ -19,6 +19,14 @@ for version, spec in matrix.items():
         assert manifest["entrypoints"]["client"] == ["de.v0idpacks.fabric.V0idPacksClient"], version
         assert not any("SmokeClient" in name for name in package.namelist()), version
         assert "de/v0idpacks/core/LibraryStore.class" in package.namelist(), version
+        assert "de/v0idpacks/core/LibraryStore$Project.class" in package.namelist(), version
+        assert "de/v0idpacks/core/PackPresentation.class" in package.namelist(), version
+        assert "de/v0idpacks/fabric/LogoPicker.class" in package.namelist(), version
+        assert manifest["mixins"] == ["v0idpacks.mixins.json"], version
+        mixins = json.loads(package.read("v0idpacks.mixins.json"))
+        assert mixins["package"] == "de.v0idpacks.fabric.mixin", version
+        assert mixins["client"] == ["PackTitleMixin"], version
+        assert "de/v0idpacks/fabric/mixin/PackTitleMixin.class" in package.namelist(), version
         assert "de/v0idpacks/ui/PreviewRenderer.class" in package.namelist(), version
         assert "de/v0idpacks/ui/ModelLoader.class" in package.namelist(), version
         assert "de/v0idpacks/ui/PanelLayout.class" in package.namelist(), version

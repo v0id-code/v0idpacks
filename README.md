@@ -12,6 +12,7 @@
 - Varianten vergleichen, Favoriten speichern und Texturen verschiedener Packs mischen.
 - Interaktive 3D- und 2D-Vorschau mit Drehen und Zoomen.
 - Zusammenstellungen automatisch speichern, als ZIP exportieren und direkt aktivieren.
+- Mehrere eigene Packs anlegen, wechseln und später weiterbearbeiten, jeweils mit eigenem Namen und PNG-Logo.
 
 ## Installation
 
@@ -25,7 +26,13 @@ Benötigt werden **Fabric Loader ab 0.20.1** und die passende **Fabric API**. Di
 
 Quell-Packs in `resourcepacks` ablegen, im Editor eine Textur auswählen und **In mein Pack übernehmen** anklicken. **Speichern & aktivieren** exportiert und aktiviert deine Zusammenstellung; **Exportieren** erstellt nur das ZIP.
 
-Original-Packs bleiben unverändert. Favoriten und Projekt liegen unter `config/v0idpacks`, Exporte unter `resourcepacks`. Exportiert werden Texturen und Animationsmetadaten; Custom-Modelle, Shader und OptiFine-CIT/CTM werden nicht mit übernommen.
+Unter **Name im Spiel** den gewünschten Pack-Namen eingeben. **PNG-Logo wählen…** öffnet die Dateiauswahl für ein quadratisches PNG; die Vorschau erscheint direkt daneben. Das Logo wird lokal kopiert und kann wieder entfernt werden. Beim Export wird der eingegebene Name automatisch gespeichert; **OK** speichert ihn auch ohne Export. Mit installierter Mod zeigt Minecraft den Namen ohne technischen Dateizusatz in der Ressourcenpaket-Liste an. Das ZIP enthält das Logo als `pack.png` und den Namen in der Beschreibung; sein Dateiname enthält zusätzlich eine eindeutige Kennung für sichere Aktualisierungen.
+
+Über **Packs verwalten** → **Neues Pack** eine weitere Zusammenstellung anlegen. In derselben Übersicht ein vorhandenes Pack zum Weiterbearbeiten auswählen. Jedes Projekt speichert seinen Namen, sein Logo und seine Texturauswahl unabhängig; Favoriten stehen in allen Projekten zur Verfügung. Beim Wechsel wird auch der eingegebene Name gespeichert. Nach einem Neustart öffnet sich das zuletzt bearbeitete Projekt. Vorhandene Ein-Pack-Projekte werden automatisch übernommen. Das Bearbeiten allein aktiviert kein Pack; **Speichern & aktivieren** ersetzt nur frühere Exporte desselben Projekts und lässt andere aktive Packs bestehen.
+
+Original-Packs bleiben unverändert. Favoriten und Projekte liegen unter `config/v0idpacks`, Exporte unter `resourcepacks`. Exportiert werden Texturen und Animationsmetadaten; Custom-Modelle, Shader und OptiFine-CIT/CTM werden nicht mit übernommen.
+
+Für den Panorama-Hintergrund müssen alle sechs Texturen `panorama_0.png` bis `panorama_5.png` unter `textures/gui/title/background` ausgewählt sein, quadratisch sein und dieselbe Auflösung haben. Unvollständige oder unterschiedlich große Panorama-Sätze werden beim Export mit einer Fehlermeldung abgewiesen. Zum Beheben alle sechs passenden Seiten auswählen oder die Panorama-Texturen aus „Mein Pack“ entfernen.
 
 ## Selbst bauen
 

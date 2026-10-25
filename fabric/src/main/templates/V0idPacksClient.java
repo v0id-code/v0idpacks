@@ -3,6 +3,7 @@ package de.v0idpacks.fabric;
 import com.google.gson.*;
 import com.mojang.blaze3d.platform.InputConstants;
 import de.v0idpacks.core.PackCatalog;
+import de.v0idpacks.core.PackPresentation;
 import de.v0idpacks.ui.EditorSession;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -77,12 +78,13 @@ public final class V0idPacksClient implements ClientModInitializer {
                 repository.reload();
                 String id = "file/" + output.getFileName();
                 if (repository.getPack(id) == null) throw new IOException("Export wurde von Minecraft nicht erkannt");
-                selected.removeIf(s -> s.startsWith("file/") && PackCatalog.isGeneratedPack(s.substring(5)));
+                String project = PackPresentation.readProjectId(client.getResourcePackDirectory(), id);
+                selected.removeIf(s -> PackPresentation.belongsToProject(client.getResourcePackDirectory(), s, project));
                 selected.add(id);
                 repository.setSelected(selected);
                 client.options.resourcePacks.clear();
                 for (var pack : repository.getSelectedPacks()) if (!pack.isFixedPosition()) client.options.resourcePacks.add(pack.getId());
-                client.options.incompatibleResourcePacks.removeIf(s -> s.startsWith("file/") && PackCatalog.isGeneratedPack(s.substring(5)));
+                client.options.incompatibleResourcePacks.removeIf(s -> PackPresentation.belongsToProject(client.getResourcePackDirectory(), s, project));
                 client.options.save();
                 client.reloadResourcePacks().whenComplete((unused, failure) -> {
                     if (failure != null) LOGGER.error("Resource pack reload failed", failure);
