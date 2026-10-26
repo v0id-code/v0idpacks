@@ -49,6 +49,17 @@ class ReleasePublicationTest(unittest.TestCase):
         self.assertEqual(version, "0.7.0")
         self.assertEqual(len(files), 2)
 
+    def test_release_notes_include_only_requested_version(self):
+        (self.root / "CHANGELOG.md").write_text(
+            "# Changelog\n\n## 0.7.0\n\n- Neuer Editor.\n\n## 0.6.1\n\n- Alter Stand.\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(publisher.release_notes("0.7.0", self.root), "- Neuer Editor.\n\n")
+        self.assertEqual(publisher.release_notes("0.8.0", self.root), "")
+
+    def test_release_notes_allow_missing_changelog(self):
+        self.assertEqual(publisher.release_notes("0.7.0", self.root), "")
+
     def test_rejects_missing_duplicate_and_extra_jars(self):
         file = self.artifacts / "v0idpacks-26.3-0.7.0.jar"
         contents = file.read_bytes()

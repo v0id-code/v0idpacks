@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.zip.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static de.v0idpacks.ui.CanvasControls.clickControl;
 
 class ToolFilterTest {
     @TempDir Path temp;
@@ -72,16 +73,16 @@ class ToolFilterTest {
     }
     @Test void toolButtonsSupportMouseKeyboardAndCategoryPopupStillCoversThem() throws Exception {
         prepare();EditorCanvas canvas=new EditorCanvas(session,()->{});canvas.draw();
-        canvas.click(250,160,0);canvas.draw();canvas.click(450,280,0);canvas.draw();assertEquals(TextureCategory.TOOLS,session.categoryFilter());
-        canvas.click(340,195,0);canvas.draw();assertEquals(ToolType.PICKAXE,session.toolTypeFilter());assertEquals(6,session.visible().size());
-        canvas.click(250,80,0);for(char c:"diamond".toCharArray())canvas.type(c);canvas.draw();assertEquals(2,session.visible().size());
-        canvas.click(340,195,0);canvas.draw();canvas.key(258,false,false,"",s->{});canvas.draw();canvas.key(257,false,false,"",s->{});canvas.draw();
+        clickControl(canvas,"category");canvas.draw();clickControl(canvas,"category-option:5");canvas.draw();assertEquals(TextureCategory.TOOLS,session.categoryFilter());
+        clickControl(canvas,"tool:PICKAXE");canvas.draw();assertEquals(ToolType.PICKAXE,session.toolTypeFilter());assertEquals(6,session.visible().size());
+        clickControl(canvas,"search");for(char c:"diamond".toCharArray())canvas.type(c);canvas.draw();assertEquals(2,session.visible().size());
+        clickControl(canvas,"tool:PICKAXE");canvas.draw();canvas.key(258,false,false,"",s->{});canvas.draw();canvas.key(257,false,false,"",s->{});canvas.draw();
         assertEquals(ToolType.AXE,session.toolTypeFilter());assertEquals("diamond",session.query());assertEquals(2,session.visible().size());
-        canvas.click(610,195,0);canvas.draw();assertEquals(ToolType.SHOVEL,session.toolTypeFilter());
-        canvas.click(750,195,0);canvas.draw();assertEquals(ToolType.HOE,session.toolTypeFilter());
-        canvas.click(250,160,0);canvas.draw();canvas.click(340,195,0);canvas.draw();assertEquals(ToolType.HOE,session.toolTypeFilter());
-        canvas.click(200,195,0);canvas.draw();assertEquals(ToolType.ALL,session.toolTypeFilter());assertEquals(8,session.visible().size());
-        canvas.click(250,120,0);canvas.draw();assertTrue(canvas.showingPacks());assertEquals(ToolType.ALL,session.toolTypeFilter());
+        clickControl(canvas,"tool:SHOVEL");canvas.draw();assertEquals(ToolType.SHOVEL,session.toolTypeFilter());
+        clickControl(canvas,"tool:HOE");canvas.draw();assertEquals(ToolType.HOE,session.toolTypeFilter());
+        clickControl(canvas,"category");canvas.draw();canvas.click(340,150,0);canvas.draw();assertEquals(ToolType.HOE,session.toolTypeFilter());
+        clickControl(canvas,"tool:ALL");canvas.draw();assertEquals(ToolType.ALL,session.toolTypeFilter());assertEquals(8,session.visible().size());
+        clickControl(canvas,"pack");canvas.draw();assertTrue(canvas.showingPacks());assertEquals(ToolType.ALL,session.toolTypeFilter());
     }
     @Test void toolComparisonAndEveryButtonFitTheSmallestSupportedCanvas() throws Exception {
         prepare();session.browseToolType(ToolType.PICKAXE);session.search("diamond");EditorCanvas canvas=new EditorCanvas(session,()->{});
@@ -90,8 +91,7 @@ class ToolFilterTest {
         ImageIO.write(canvas.draw(),"png",out.resolve("tools-pickaxes.png").toFile());
         canvas.resize(760,440);ImageIO.write(canvas.draw(),"png",out.resolve("tools-small.png").toFile());
         // Each filter must remain reachable inside the 292-pixel library column.
-        int[] centers={178,237,298,355,421};ToolType[] types=ToolType.values();
-        for(int i=0;i<centers.length;i++){canvas.click(centers[i],195,0);canvas.draw();assertEquals(types[i],session.toolTypeFilter());}
+        for(ToolType type:ToolType.values()){clickControl(canvas,"tool:"+type.name());canvas.draw();assertEquals(type,session.toolTypeFilter());}
         session.search("no-such-tool");ImageIO.write(canvas.draw(),"png",out.resolve("tools-empty.png").toFile());assertTrue(session.visible().isEmpty());
     }
 }

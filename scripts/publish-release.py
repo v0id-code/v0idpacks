@@ -44,6 +44,17 @@ def gh(*arguments):
     return subprocess.check_output(["gh", *arguments], text=True).strip()
 
 
+def release_notes(version, root=ROOT):
+    changelog = root / "CHANGELOG.md"
+    if not changelog.is_file():
+        return ""
+    section = re.search(
+        rf"^## {re.escape(version)}\s*\n(.*?)(?=^## |\Z)",
+        changelog.read_text(encoding="utf-8"), re.MULTILINE | re.DOTALL,
+    )
+    return section[1].strip() + "\n\n" if section else ""
+
+
 def publish(directory, environment=None):
     env = os.environ if environment is None else environment
     if (env.get("GITHUB_REPOSITORY") != REPOSITORY
@@ -73,10 +84,9 @@ def publish(directory, environment=None):
         notes = Path(temporary) / "notes.md"
         notes.write_text(
             f"v0idpacks {version} · Build {number} (Versuch {attempt})\n\n"
+            + release_notes(version) +
             f"Commit: {sha}\n\n"
-            "Automatisch veröffentlicht, nachdem alle Minecraft-Builds und Core-Tests erfolgreich waren. "
-            "Die JAR für deine Minecraft-Version direkt herunterladen und in den mods-Ordner legen. "
-            "Die Build-Prüfung ersetzt keinen vollständigen Laufzeittest im Spiel.\n",
+            "Die passende JAR für deine Minecraft-Version herunterladen und in den mods-Ordner legen.\n",
             encoding="utf-8",
         )
         # Draft assets are hidden from the public feed until the entire upload succeeds.

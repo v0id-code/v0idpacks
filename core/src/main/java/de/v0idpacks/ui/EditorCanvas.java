@@ -11,11 +11,12 @@ import static de.v0idpacks.ui.UiMotion.Effect.*;
 
 /** Native in-game canvas. Redraws on changes and during bounded UI transitions. */
 public final class EditorCanvas {
-    // tastemaker: editor/canvas, technical dark, seed 214. See .tastemaker/style-lock.md.
+    // tastemaker: technical dark, seed 214; full-width library, top tabs, on-demand preview.
     public static final Color BG = new Color(0x0d1417), SURFACE = new Color(0x181f23), BORDER = new Color(0x242b2f);
     public static final Color TEXT = new Color(0xe6f4fc), MUTED = new Color(0xa8b8c1), ACCENT = new Color(0x29addd);
     private static final Color PRIMARY = new Color(0x0980a6), SECONDARY = new Color(0x0e3241), WHITE = Color.WHITE;
     private static final Color ERROR = new Color(0xffb7a5), CHECKER = new Color(0x20292e);
+    private static final int CONTROL_RADIUS = 10, PANEL_RADIUS = 16;
     private static final Font BODY = new Font(Font.SANS_SERIF, Font.PLAIN, 13), SMALL = BODY.deriveFont(11f), LABEL = BODY.deriveFont(Font.BOLD, 13f), TITLE = BODY.deriveFont(Font.BOLD, 22f);
     private record Hit(String id, String label, Rectangle box, boolean enabled, Runnable action) {}
     private record FilterChoice(String id, String label, boolean selected, Runnable action) {}
@@ -45,10 +46,16 @@ public final class EditorCanvas {
     private boolean categoryMenu;
     private boolean nameEdited;
     private boolean projectsMenu;
+    private boolean identityMenu;
+    private boolean identitySaving;
+    private boolean previewMenu;
+    private boolean lastPreviewMenu;
+    private String previewReturnFocus = "";
     private int projectPage;
     private String editingProject = "";
     private int categoryIndex;
     private Rectangle viewport = new Rectangle();
+    private Rectangle previewDialogBounds=new Rectangle();
     private double yaw = -.48, pitch = .25, zoom = 1;
     private double renderedYaw, renderedPitch, renderedZoom;
 
@@ -66,6 +73,13 @@ public final class EditorCanvas {
     }
     public int width() { return width; }
     public int height() { return height; }
+    // Package-local geometry lets interaction tests follow controls through layout changes.
+    Rectangle controlBounds(String id) {
+        return hits.stream().filter(h -> h.id.equals(id)).map(h -> new Rectangle(h.box)).findFirst().orElseThrow();
+    }
+    String firstControl(String prefix) {
+        return hits.stream().map(Hit::id).filter(id->id.startsWith(prefix)).findFirst().orElseThrow();
+    }
     public boolean isEditingText() { return focus.equals("search") || focus.equals("name"); }
     public boolean showingPacks() { return session.tab()==EditorSession.Tab.ALL && session.packFilter().isEmpty() && session.categoryFilter()==TextureCategory.ALL && !allTextures; }
     public String narration() {
@@ -75,9 +89,14 @@ public final class EditorCanvas {
     /** null means the GPU texture can be reused this frame. */
     public BufferedImage draw() {
         session.poll();
+        if(identitySaving&&!session.busy()) {
+            identitySaving=false;
+            if(!session.error()){identityMenu=false;focus="identity";}
+            dirty=true;
+        }
         if (session.ready() && !session.busy() && !editingProject.equals(session.projectId())) {
             editingProject = session.projectId(); nameEdited = false; nameDraft = session.name();
-            projectsMenu = false; focus = ""; scroll = 0; dirty = true;
+            projectsMenu = false; identityMenu = false; previewMenu=false; focus = ""; scroll = 0; dirty = true;
         }
         boolean enabled=session.ready()&&session.animationsEnabled();
         if(animationsEnabled!=enabled){animationsEnabled=enabled;dirty=true;}
@@ -89,6 +108,9 @@ public final class EditorCanvas {
         if(lastPreview!=session.preview()) {lastPreview=session.preview();if(lastPreview!=null)motion.start(PREVIEW);}
         if(categoryMenu&&!lastCategoryMenu)motion.start(MENU);
         lastCategoryMenu=categoryMenu;
+        if(previewMenu&&!lastPreviewMenu)motion.start(MENU);
+        lastPreviewMenu=previewMenu;
+        if(previewMenu&&session.focused()==null)closePreview();
         frameTime=clock.getAsLong();
         if (!dirty && renderedRevision == session.revision() && !motion.needsFrame()) return null;
         dirty = false; renderedRevision = session.revision();
@@ -98,53 +120,42 @@ public final class EditorCanvas {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
         hits.clear(); fill(g, 0, 0, width, height, BG);
-        int sidebar = 144, inspector = 280, contentX = sidebar + 16, contentW = width - contentX - inspector - 28;
-        int inspectorX = width - inspector - 12, bottom = height - 42;
-        fill(g, 0, 0, sidebar, height, SURFACE); line(g, sidebar, 0, sidebar, height, BORDER);
-        fill(g,0,0,sidebar,74,BG);
-        Branding.logo(g,56,3,32);
-        Branding.wordmark(g,6,31,132);
-        nav(g, "all", "Bibliothek", "Packs", EditorSession.Tab.ALL, 80);
-        nav(g, "favorites", "Favoriten", Integer.toString(session.favoriteCount()), EditorSession.Tab.FAVORITES, 120);
-        nav(g, "selected", "Mein Pack", Integer.toString(session.selectedCount()), EditorSession.Tab.SELECTED, 160);
-        button(g, "projects", "Packs verwalten", 12, 202, 120, 24, session.ready() && !session.busy(), false, () -> {
-            projectsMenu = true; categoryMenu = false; projectPage = 0; focus = "new-project"; dirty = true;
-        });
-        text(g, session.packs().size() + " Packs installiert", 14, 236, SMALL, MUTED);
-        button(g, "refresh", "Neu einlesen", 12, 248, 120, 30, session.ready() && !session.busy(), false, session::refresh);
-        button(g,"animations","Animationen: "+(session.animationsEnabled()?"An":"Aus"),12,288,120,28,session.ready()&&!session.busy(),false,session::toggleAnimations);
-        text(g, "Lokal gespeichert", 14, height - 52, LABEL, TEXT);
-        text(g, "Favoriten & Auswahl", 14, height - 32, SMALL, MUTED);
+        int contentX=20,contentW=width-40,bottom=height-92;
+        fill(g,0,0,width,56,SURFACE);line(g,0,55,width,55,BORDER);
+        Branding.header(g,20,28,22);
+        nav(g,"all","Bibliothek",EditorSession.Tab.ALL,184);
+        nav(g,"favorites","Favoriten",EditorSession.Tab.FAVORITES,318);
+        nav(g,"selected","Mein Pack",EditorSession.Tab.SELECTED,452);
+        button(g,"close","Schließen",width-110,14,90,28,true,false,close);
 
         boolean armor=session.tab()==EditorSession.Tab.ALL&&session.categoryFilter()==TextureCategory.ARMOR;
         boolean tools=session.tab()==EditorSession.Tab.ALL&&session.categoryFilter()==TextureCategory.TOOLS;
         String title = switch(session.tab()) { case ALL -> showingPacks()?"Deine Texturepacks":session.categoryFilter()!=TextureCategory.ALL?session.categoryFilter().label():session.packFilter().isEmpty()?"Alle Texturen":session.packName(session.packFilter()); case FAVORITES -> "Deine Favoriten"; case SELECTED -> session.name(); };
         if(armor&&session.armorPartFilter()!=ArmorPart.ALL)title+=" · "+session.armorPartFilter().label();
         if(tools&&session.toolTypeFilter()!=ToolType.ALL)title+=" · "+session.toolTypeFilter().label();
-        text(g, clip(g,title,contentW,TITLE), contentX, 32, TITLE, TEXT);
-        String subtitle=showingPacks()?"Pack öffnen oder nach Kategorie filtern.":session.tab()==EditorSession.Tab.ALL&&session.packFilter().isEmpty()?"Texturen aus allen installierten Packs.":"Auswählen. Ansehen. Zusammenstellen.";
-        if(armor&&session.armorPartFilter()!=ArmorPart.ALL)subtitle="Item-Texturen aus allen installierten Packs.";
-        if(tools&&session.toolTypeFilter()!=ToolType.ALL)subtitle="Item-Texturen aus allen installierten Packs.";
-        text(g, clip(g,subtitle,contentW,SMALL), contentX, 50, SMALL, MUTED);
-        button(g, "close", "Schließen", width - 102, 16, 90, 28, true, false, close);
-        input(g, "search", showingPacks()?"Packs suchen…":"Texturen suchen…", session.query(), contentX, 64, contentW, 32);
-        button(g, "pack", showingPacks()?"Alle Texturen anzeigen":"‹ Zur Pack-Übersicht", contentX, 106, Math.max(154,contentW-94), 28, session.ready(), false, () -> {
+        int titleX=showingPacks()?contentX:contentX+128;
+        text(g,clip(g,title,contentW-(titleX-contentX)-96,TITLE),titleX,86,TITLE,TEXT);
+        button(g,"pack",showingPacks()?"Alle Texturen":"‹ Alle Packs",showingPacks()?width-230:contentX,66,114,28,session.ready(),false,()->{
             allTextures=showingPacks();session.filter(EditorSession.Tab.ALL,"","");scroll=0;dirty=true;
         });
         int count=showingPacks()?session.visiblePacks().size():session.visible().size();
-        text(g, count + (showingPacks()?" Packs":" Treffer"), contentX + contentW - 80, 125, SMALL, MUTED);
+        String resultCount=count + (showingPacks()?" Packs":" Treffer");
+        text(g,resultCount,contentX+contentW-FormattedText.width(g,resultCount,SMALL),84,SMALL,MUTED);
 
         boolean library=session.tab()==EditorSession.Tab.ALL;
-        if(library)button(g,"category","Kategorie: "+session.categoryFilter().label()+"  ▾",contentX,148,contentW,28,session.ready(),session.categoryFilter()!=TextureCategory.ALL,()->{
+        int categoryX=width-396,searchWidth=library?categoryX-contentX-8:contentW-192;
+        input(g,"search",showingPacks()?"Packs suchen…":"Texturen suchen…",session.query(),contentX,100,searchWidth,32);
+        button(g,"refresh","resourcepacks reloaden",width-204,100,184,32,session.ready()&&!session.busy(),false,session::refresh);
+        if(library)button(g,"category",session.categoryFilter().label(),categoryX,100,184,32,session.ready(),false,()->{
             categoryMenu=!categoryMenu;categoryIndex=session.categoryFilter().ordinal();
             focus=categoryMenu?"category-option:"+categoryIndex:"category";dirty=true;
         });
-        if(armor)armorFilters(g,contentX,182,contentW);
-        if(tools)toolFilters(g,contentX,182,contentW);
-        int gridTop = armor||tools?222:library?190:148, gridBottom = bottom - 36;
-        columns = showingPacks()?Math.max(1,contentW/265):Math.max(2, contentW / 116);
+        if(armor)armorFilters(g,contentX,144,Math.min(contentW,560));
+        if(tools)toolFilters(g,contentX,144,Math.min(contentW,560));
+        int gridTop = armor||tools?184:146, gridBottom = bottom - 42;
+        columns = showingPacks()?Math.max(1,contentW/265):Math.max(2, contentW / 128);
         int gap = 10, tileW = (contentW - gap * (columns - 1)) / columns;
-        int tileH = showingPacks()?92:122, rows = Math.max(1, (gridBottom - gridTop + gap) / (tileH + gap));
+        int tileH=showingPacks()?92:height<520?112:122,rows=Math.max(1,(gridBottom-gridTop+gap)/(tileH+gap));
         pageSize = rows * columns;
         scroll = Math.clamp(scroll, 0, Math.max(0, ((count - 1) / pageSize) * pageSize));
         Composite contentComposite=g.getComposite();alpha(g,.35f+.65f*motion.progress(CONTENT,frameTime));
@@ -159,9 +170,9 @@ public final class EditorCanvas {
                     : switch (session.tab()) { case ALL -> "Noch keine Texturen gefunden"; case FAVORITES -> "Hier landen deine Lieblings-Texturen"; case SELECTED -> "Stelle dein erstes Pack zusammen"; };
             text(g, clip(g,showingPacks()&&session.ready()?"Keine passenden Packs gefunden":empty,contentW-16,LABEL), contentX + 8, gridTop + 54, LABEL, TEXT);
             boolean filtered=library&&(!session.query().isEmpty()||session.categoryFilter()!=TextureCategory.ALL);
-            String hint = armor ? "Anderes Teil wählen oder Suche leeren." : tools ? "Anderes Werkzeug wählen oder Suche leeren." : filtered ? "Andere Kategorie wählen oder Suche leeren." : library ? "ZIPs oder Pack-Ordner in resourcepacks ablegen." : "Wähle links in der Bibliothek eine Textur aus.";
+            String hint = armor ? "Anderes Teil wählen oder Suche leeren." : tools ? "Anderes Werkzeug wählen oder Suche leeren." : filtered ? "Andere Kategorie wählen oder Suche leeren." : library ? "ZIPs oder Pack-Ordner in resourcepacks ablegen." : "Wähle im Tab Bibliothek eine Textur aus.";
             text(g, clip(g,hint,contentW-16,SMALL), contentX + 8, gridTop + 78, SMALL, MUTED);
-            if (library&&!filtered) text(g, "Danach „Neu einlesen“ wählen.", contentX + 8, gridTop + 100, SMALL, MUTED);
+            if (library&&!filtered) text(g, "Danach „resourcepacks reloaden“ wählen.", contentX + 8, gridTop + 100, SMALL, MUTED);
         }
         g.setComposite(contentComposite);
         button(g, "prev", "Zurück", contentX, bottom - 35, 85, 28, scroll > 0, false, () -> { scroll = Math.max(0, scroll - pageSize); dirty = true; });
@@ -169,13 +180,15 @@ public final class EditorCanvas {
         text(g, (scroll / pageSize + 1) + " / " + pages, contentX + 102, bottom - 16, SMALL, MUTED);
         button(g, "next", "Weiter", contentX + contentW - 85, bottom - 35, 85, 28, scroll + pageSize < count, false, () -> { scroll += pageSize; dirty = true; });
 
-        inspector(g, inspectorX, 64, inspector, height - 184);
-        line(g, sidebar, bottom, width, bottom, BORDER);
+        viewport=new Rectangle();
+        projectBar(g,contentX,bottom,contentW);
         String status = (session.busy() ? "◌  " : session.error() ? "!  " : "✓  ") + session.status();
-        text(g, clip(g, status, width - sidebar - 28, SMALL), contentX, bottom + 17, SMALL, session.error() ? ERROR : MUTED);
-        text(g, "F: Favorit   ·   Leertaste: Auswahl   ·   Tab: Navigation   ·   Esc: Schließen", contentX, bottom + 33, SMALL, MUTED);
-        if(categoryMenu&&library)categoryDropdown(g,contentX,182,Math.min(contentW,400));
+        text(g, clip(g, status, contentW-156, SMALL), contentX, height-9, SMALL, session.error() ? ERROR : MUTED);
+        button(g,"animations","Animationen: "+(session.animationsEnabled()?"An":"Aus"),width-152,height-27,132,24,session.ready()&&!session.busy(),false,session::toggleAnimations);
+        if(categoryMenu&&library)categoryDropdown(g,categoryX-216,140,400);
+        if(previewMenu)textureDialog(g);
         if(projectsMenu)projectDialog(g);
+        if(identityMenu)identityDialog(g);
         g.dispose();
         float opening=motion.progress(OPEN,frameTime);
         motion.finishFrame(frameTime);
@@ -188,10 +201,54 @@ public final class EditorCanvas {
         openingGraphics.drawImage(image,0,0,null);openingGraphics.dispose();return openingImage;
     }
     private int projectPageSize() { return Math.max(1, (Math.min(height - 48, 440) - 160) / 48); }
+    private void projectBar(Graphics2D g,int x,int y,int w) {
+        round(g,x,y,w,64,PANEL_RADIUS,SURFACE);
+        int iconX=x+12, iconY=y+12;
+        round(g,iconX,iconY,40,40,CONTROL_RADIUS,BG);
+        if(session.logo()!=null)g.drawImage(session.logo(),iconX+4,iconY+4,32,32,null);
+        else Branding.logo(g,iconX+6,iconY+6,28);
+        int actionsX=x+w-292, titleWidth=Math.max(40,actionsX-x-264);
+        text(g,clip(g,draftName(),titleWidth,LABEL),x+64,y+26,LABEL,TEXT);
+        text(g,session.selectedCount()+" Texturen",x+64,y+45,SMALL,MUTED);
+        button(g,"projects","Meine Packs",actionsX-188,y+16,98,32,session.ready()&&!session.busy(),false,()->{
+            projectsMenu=true;categoryMenu=false;projectPage=0;focus="new-project";dirty=true;
+        });
+        button(g,"identity","Anpassen",actionsX-82,y+16,74,32,session.ready()&&!session.busy(),false,()->{
+            identityMenu=true;categoryMenu=false;focus="name";allTextSelected=false;dirty=true;
+            if(!nameEdited)nameDraft=session.name();
+        });
+        boolean enabled=session.selectedCount()>0&&!session.busy();
+        button(g,"export","Exportieren",actionsX,y+16,108,32,enabled,false,()->session.export(false,draftName()));
+        button(g,"activate","Speichern & aktivieren",actionsX+116,y+16,164,32,enabled,true,()->session.export(true,draftName()));
+    }
+    private void dismissIdentity() {
+        if(session.busy())return;
+        session.rename(draftName());
+        identitySaving=session.busy();dirty=true;
+    }
+    private void identityDialog(Graphics2D g) {
+        fill(g,0,0,width,height,new Color(0,0,0,175));
+        int w=408,h=304,x=(width-w)/2,y=(height-h)/2;
+        round(g,x,y,w,h,PANEL_RADIUS,SURFACE);
+        hits.clear();
+        text(g,"Dein Pack",x+24,y+36,TITLE,TEXT);
+        text(g,"Name und Logo für die Ressourcenpaket-Liste.",x+24,y+58,SMALL,MUTED);
+        text(g,"Name im Spiel",x+24,y+92,LABEL,TEXT);
+        input(g,"name","Pack-Name",draftName(),x+24,y+104,w-48,34);
+        round(g,x+24,y+154,64,64,CONTROL_RADIUS,BG);
+        if(session.logo()!=null)g.drawImage(session.logo(),x+28,y+158,56,56,null);
+        else Branding.logo(g,x+36,y+166,40);
+        button(g,"logo",session.hasLogo()?"Logo ändern…":"PNG-Logo wählen…",x+104,y+154,w-128,30,session.ready()&&!session.busy(),false,chooseLogo);
+        if(session.hasLogo())button(g,"remove-logo","Logo entfernen",x+104,y+190,w-128,26,!session.busy(),false,session::removeLogo);
+        else text(g,"Quadratisches PNG",x+104,y+207,SMALL,MUTED);
+        if(session.error())text(g,clip(g,session.status(),w-48,SMALL),x+24,y+241,SMALL,ERROR);
+        button(g,"identity-close","Fertig",x+w-124,y+h-48,100,32,!session.busy(),true,this::dismissIdentity);
+        text(g,"Änderungen werden lokal gespeichert.",x+24,y+h-27,SMALL,MUTED);
+    }
     private void projectDialog(Graphics2D g) {
         fill(g, 0, 0, width, height, new Color(0,0,0,175));
         int w = Math.min(480, width - 48), h = Math.min(height - 48, 440), x = (width-w)/2, y = (height-h)/2;
-        fill(g,x,y,w,h,SURFACE); outline(g,x,y,w,h,BORDER);
+        round(g,x,y,w,h,PANEL_RADIUS,SURFACE);
         hits.clear(); // Modal controls exclusively own mouse and keyboard focus.
         text(g,"Meine Packs",x+20,y+32,TITLE,TEXT);
         text(g,"Ein Pack wählen, um es weiterzubearbeiten.",x+20,y+54,SMALL,MUTED);
@@ -201,7 +258,7 @@ public final class EditorCanvas {
         for (int i=projectPage*size;i<Math.min(projects.size(),(projectPage+1)*size);i++) {
             var entry=projects.get(i); var project=entry.getValue(); int rowY=y+70+(i%size)*48;
             boolean selected=entry.getKey().equals(session.projectId());
-            fill(g,x+20,rowY,w-40,42,selected?SECONDARY:BG);
+            round(g,x+20,rowY,w-40,42,CONTROL_RADIUS,selected?SECONDARY:BG);
             text(g,clip(g,project.name(),w-160,LABEL),x+30,rowY+17,LABEL,TEXT);
             text(g,project.selected().size()+" Texturen"+(project.logo().isEmpty()?"":" · mit Logo"),x+30,rowY+33,SMALL,MUTED);
             text(g,selected?"Geöffnet":"Bearbeiten",x+w-104,rowY+25,SMALL,selected?ACCENT:MUTED);
@@ -218,13 +275,15 @@ public final class EditorCanvas {
         button(g,"new-project","Neues Pack",x+20,y+h-38,144,26,!session.busy(),true,()->session.createProject(draftName()));
         button(g,"projects-close","Zurück",x+w-110,y+h-38,90,26,!session.busy(),false,()->{projectsMenu=false;focus="projects";dirty=true;});
     }
-    private void nav(Graphics2D g, String id, String label, String count, EditorSession.Tab tab, int y) {
+    private void nav(Graphics2D g,String id,String label,EditorSession.Tab tab,int x) {
         boolean selected = session.tab() == tab;
-        Rectangle rect = new Rectangle(8, y, 128, 34);
-        fill(g, rect.x, rect.y, rect.width, rect.height, selected ? SECONDARY : SURFACE);
-        if (selected) fill(g, 8, y + 7, 3, 20, ACCENT);
-        text(g, label, 20, y + 22, LABEL, selected ? TEXT : MUTED);
-        if (tab != EditorSession.Tab.ALL) text(g, count, 126 - g.getFontMetrics(SMALL).stringWidth(count), y + 22, SMALL, selected ? ACCENT : MUTED);
+        int y=12;Rectangle rect=new Rectangle(x,y,128,34);
+        round(g, rect.x, rect.y, rect.width, rect.height, CONTROL_RADIUS, selected ? SECONDARY : SURFACE);
+        if(selected)round(g,x+12,y+32,104,2,2,ACCENT);
+        UiIcons.draw(g,switch(tab){case ALL->"grid";case FAVORITES->"star";case SELECTED->"package";},x+10,y+9,selected?ACCENT:MUTED);
+        text(g,label,x+34,y+22,LABEL,selected?TEXT:MUTED);
+        String count=Integer.toString(tab==EditorSession.Tab.FAVORITES?session.favoriteCount():session.selectedCount());
+        if(tab!=EditorSession.Tab.ALL)text(g,count,x+120-g.getFontMetrics(SMALL).stringWidth(count),y+22,SMALL,selected?ACCENT:MUTED);
         hit(g, new Hit(id, label, rect, true, () -> { session.filter(tab, "", ""); allTextures=false;categoryMenu=false;scroll = 0; dirty = true; }));
     }
     private void chooseCategory(TextureCategory category) {
@@ -264,7 +323,7 @@ public final class EditorCanvas {
         Hit trigger=hits.stream().filter(h->h.id.equals("category")).findFirst().orElseThrow();
         hits.clear();hits.add(trigger);
         int h=28+((categories.length+1)/2)*30+4,colW=(w-24)/2;
-        fill(g,x,y,w,h,BG);outline(g,x,y,w,h,ACCENT);
+        round(g,x,y,w,h,CONTROL_RADIUS,BG);roundOutline(g,x,y,w,h,CONTROL_RADIUS,ACCENT);
         text(g,"Kategorien aus allen Packs",x+12,y+19,SMALL,MUTED);
         for(int i=0;i<categories.length;i++) {
             TextureCategory category=categories[i];
@@ -273,7 +332,7 @@ public final class EditorCanvas {
         g.setComposite(composite);
     }
     private void packTile(Graphics2D g,PackInfo pack,int x,int y,int w,int h) {
-        fill(g,x,y,w,h,SURFACE);
+        round(g,x,y,w,h,PANEL_RADIUS,SURFACE);
         if(pack.icon()!=null)g.drawImage(pack.icon(),x+12,y+14,56,56,null);
         else {fill(g,x+12,y+14,56,56,SECONDARY);for(int row=0;row<3;row++)for(int col=0;col<3;col++)fill(g,x+21+col*13,y+23+row*13,10,10,(row+col)%2==0?ACCENT:BORDER);}
         text(g,clip(g,pack.displayName(),w-92,LABEL),x+80,y+28,LABEL,TEXT);
@@ -283,30 +342,45 @@ public final class EditorCanvas {
     }
     private void tile(Graphics2D g, TextureRef ref, int x, int y, int w, int h) {
         boolean focused = Objects.equals(session.focused(), ref);
-        fill(g, x, y, w, h, focused ? SECONDARY : SURFACE);
-        checker(g, x + 6, y + 6, w - 12, 74);
+        round(g, x, y, w, h, PANEL_RADIUS, focused ? SECONDARY : SURFACE);
+        int thumbHeight=h-48;
+        round(g,x+6,y+6,w-12,thumbHeight,CONTROL_RADIUS,BG);
         BufferedImage thumb = session.thumbnail(ref);
-        if (thumb != null) {int size=64;double ratio=(double)thumb.getWidth()/thumb.getHeight();int iw=(int)(size*Math.min(1,ratio)),ih=(int)(size*Math.min(1,1/ratio));g.drawImage(thumb,x+(w-iw)/2,y+10+(64-ih)/2,iw,ih,null);}
+        if (thumb != null) {int size=Math.min(64,thumbHeight-8);double ratio=(double)thumb.getWidth()/thumb.getHeight();int iw=(int)(size*Math.min(1,ratio)),ih=(int)(size*Math.min(1,1/ratio));g.drawImage(thumb,x+(w-iw)/2,y+6+(thumbHeight-ih)/2,iw,ih,null);}
         else text(g, session.thumbnailFailed(ref) ? "Nicht lesbar" : "…", x + 12, y + 54, SMALL, MUTED);
-        if (session.isFavorite(ref)) text(g, "★", x + 8, y + 23, BODY, ACCENT);
-        if (session.isSelected(ref)) { fill(g, x + w - 30, y + 7, 22, 20, PRIMARY); text(g, "✓", x + w - 25, y + 22, BODY, WHITE); }
-        text(g, clip(g, ref.name(), w - 16, LABEL), x + 8, y + 99, LABEL, TEXT);
-        text(g, clip(g, session.packName(ref.pack()), w - 16, SMALL), x + 8, y + 115, SMALL, MUTED);
-        if (focused) outline(g, x, y, w, h, ACCENT);
+        if (session.isFavorite(ref)) UiIcons.draw(g,"star",x+8,y+9,ACCENT);
+        if (session.isSelected(ref)) { round(g, x + w - 28, y + 7, 20, 20, CONTROL_RADIUS,PRIMARY); UiIcons.draw(g,"check",x+w-26,y+9,WHITE); }
+        text(g, clip(g, ref.name(), w - 16, LABEL), x + 8, y+h-23, LABEL, TEXT);
+        text(g, clip(g, session.packName(ref.pack()), w - 16, SMALL), x + 8, y+h-7, SMALL, MUTED);
+        if (focused) roundOutline(g, x, y, w, h, PANEL_RADIUS, ACCENT);
         hit(g, new Hit("tile:" + ref.key(), ref.name() + " aus " + ref.pack(), new Rectangle(x,y,w,h), true, () -> {
-            session.focus(ref); previewImage = null;
-            mode = PreviewRenderer.Mode.AUTO;
-            yaw = -.48; pitch = .25; zoom = 1; dirty = true;
+            openPreview(ref);
         }));
     }
-    private void inspector(Graphics2D g, int x, int y, int w, int h) {
-        fill(g, x, y, w, h, SURFACE);
-        int p = 12;
-        text(g, "VORSCHAU", x + p, y + 18, SMALL, MUTED);
-        TextureRef ref = session.focused();
-        text(g, clip(g, ref == null ? "Wähle eine Textur" : ref.name(), w - 24, LABEL), x + p, y + 40, LABEL, TEXT);
-        int viewportHeight = Math.clamp(height-450,24,220);
-        viewport = new Rectangle(x + p, y + 54, w - 24, viewportHeight);
+    private void openPreview(TextureRef ref) {
+        session.focus(ref);previewImage=null;previewMenu=true;categoryMenu=false;
+        int w=Math.min(900,width-48),h=Math.min(560,height-48);
+        previewDialogBounds=new Rectangle((width-w)/2,(height-h)/2,w,h);
+        hits.clear();viewport=new Rectangle();
+        previewReturnFocus="tile:"+ref.key();focus="viewport";dragging=false;
+        mode=PreviewRenderer.Mode.AUTO;yaw=-.48;pitch=.25;zoom=1;dirty=true;
+    }
+    private void closePreview() {
+        previewMenu=false;dragging=false;focus=previewReturnFocus;viewport=new Rectangle();hits.clear();dirty=true;
+    }
+    private void textureDialog(Graphics2D g) {
+        TextureRef ref=session.focused();if(ref==null)return;
+        Composite composite=g.getComposite();alpha(g,.35f+.65f*motion.progress(MENU,frameTime));
+        fill(g,0,0,width,height,new Color(0,0,0,190));
+        int w=Math.min(900,width-48),h=Math.min(560,height-48),x=(width-w)/2,y=(height-h)/2;
+        previewDialogBounds=new Rectangle(x,y,w,h);
+        int controlsX=x+w-280,controlsW=256;
+        round(g, x, y, w, h, PANEL_RADIUS,SURFACE);
+        hits.clear();
+        text(g,clip(g,ref.name(),w-160,TITLE),x+24,y+34,TITLE,TEXT);
+        text(g,clip(g,session.packName(ref.pack()),w-160,SMALL),x+24,y+55,SMALL,MUTED);
+        button(g,"preview-close","Zurück",x+w-110,y+20,86,28,true,false,this::closePreview);
+        viewport=new Rectangle(x+24,y+76,w-328,h-100);
         checker(g, viewport.x, viewport.y, viewport.width, viewport.height);
         if (session.preview() != null) {
             TextureImage texture = session.preview();
@@ -325,68 +399,64 @@ public final class EditorCanvas {
             String resolution = mode==PreviewRenderer.Mode.AUTO&&session.previewModel()!=null?session.previewModel().label():texture.width() + " × " + texture.height() + (texture.animated() ? " · erstes Animationsbild" : " px");
             if(mode==PreviewRenderer.Mode.AUTO && session.previewModel()==null && !texture.animated())resolution+=" · "+(ref.category().equals("block")?"Texturwürfel":ref.category().equals("item")?"3D-Sprite":"2D-Textur");
             if(mode==PreviewRenderer.Mode.AUTO && session.previewModel()==null && !session.modelNote().isEmpty())resolution="Texturansicht · Modell nicht verfügbar";
-            text(g, resolution, x + p, viewport.y + viewport.height + 21, SMALL, MUTED);
+            text(g,clip(g,resolution,controlsW,SMALL),controlsX,y+156,SMALL,MUTED);
         } else {
-            String label = ref == null ? "Deine nächste Lieblings-Textur?" : session.previewError().isEmpty() ? "Vorschau wird geladen…" : "Vorschau nicht verfügbar";
-            if(ref==null&&viewport.height>=180) {
-                fill(g,viewport.x,viewport.y,viewport.width,viewport.height,BG);
-                int centerX=viewport.x+viewport.width/2,centerY=viewport.y+viewport.height/2;
-                Branding.logo(g,centerX-32,centerY-78,64);
-                Branding.wordmark(g,centerX-100,centerY-8,200);
-                String hint="Textur auswählen und vergleichen";
-                text(g,hint,centerX-FormattedText.width(g,hint,SMALL)/2,viewport.y+viewport.height-18,SMALL,MUTED);
-            } else text(g, label, viewport.x + 12, viewport.y + viewport.height / 2, SMALL, MUTED);
-            if (!session.previewError().isEmpty()) text(g, clip(g, session.previewError(), w - 32, SMALL), x + p, viewport.y + viewport.height + 21, SMALL, ERROR);
+            String label=session.previewError().isEmpty()?"Vorschau wird geladen…":"Vorschau nicht verfügbar";
+            text(g,clip(g,label,viewport.width-24,SMALL),viewport.x+12,viewport.y+viewport.height/2,SMALL,MUTED);
+            if (!session.previewError().isEmpty()) text(g, clip(g, session.previewError(), controlsW, SMALL), controlsX, y+156, SMALL, ERROR);
         }
-        hit(g, new Hit("viewport", "3D-Vorschau. Ziehen oder Pfeiltasten zum Drehen, Mausrad zum Zoomen.", viewport, ref != null, () -> {}));
-        boolean compact = height < 520;
-        int controls = viewport.y + viewport.height + (compact ? 26 : 30);
+        hit(g,new Hit("viewport","3D-Vorschau. Ziehen oder Pfeiltasten zum Drehen, Mausrad zum Zoomen.",viewport,true,()->{}));
+        text(g,"Darstellung",controlsX,y+92,LABEL,TEXT);
+        int controls=y+104;
         String[] modes = { "Auto", "Item", "Würfel", "2D" };
         PreviewRenderer.Mode[] values={PreviewRenderer.Mode.AUTO,PreviewRenderer.Mode.ITEM,PreviewRenderer.Mode.CUBE,PreviewRenderer.Mode.FLAT};
         for (int i = 0; i < 4; i++) {
             PreviewRenderer.Mode next = values[i];
-            button(g, "mode" + i, modes[i], x + p + i * 65, controls, 61, 26, ref != null, mode == next, () -> { mode = next; dirty = true; });
+            int modeW=controlsW/4;
+            button(g,"mode"+i,modes[i],controlsX+i*modeW,controls,modeW-3,26,true,mode==next,()->{mode=next;dirty=true;});
         }
-        if (!compact) text(g, ref!=null&&ref.path().equals(ModelLoader.CRYSTAL_ITEM)&&session.previewModel()!=null?"3D: Entity-Textur · 2D: Inventar-Icon":"Ziehen: drehen · Mausrad: zoomen", x + p, controls + 44, SMALL, MUTED);
-        int buttonsY = controls + (compact ? 28 : 54);
-        boolean enabled = ref != null && session.ready() && !session.busy();
-        button(g, "favorite", ref != null && session.isFavorite(ref) ? "★  Favorit gespeichert" : "☆  Als Favorit speichern", x + p, buttonsY, w - 24, compact ? 24 : 28, enabled, false, session::favorite);
-        String select = ref != null && session.isSelected(ref) ? "Aus Pack entfernen" : ref != null && session.replacesOther(ref) ? "Vorhandene Textur ersetzen" : "In mein Pack übernehmen";
-        button(g, "select", select, x + p, buttonsY + (compact ? 28 : 34), w - 24, compact ? 24 : 30, enabled, true, session::select);
-        if (ref != null && height>=700) {
-            text(g, clip(g, ref.path(), w - 24, SMALL), x + p, buttonsY + 82, SMALL, MUTED);
-        }
-        // Export controls occupy their own panel, above the global status line.
-        int footerY = height - 166;
-        fill(g, x, footerY - 18, w, 140, BG);
-        text(g, "NAME IM SPIEL", x, footerY - 5, SMALL, MUTED);
-        input(g, "name", "Pack-Name", draftName(), x, footerY, w - 48, 28);
-        button(g, "rename", "OK", x + w - 42, footerY, 42, 28, session.ready() && !session.busy(), false, () -> session.rename(draftName()));
-        checker(g, x, footerY + 36, 40, 40);
-        if (session.logo() != null) g.drawImage(session.logo(), x, footerY + 36, 40, 40, null);
-        button(g, "logo", session.hasLogo() ? "Logo ändern…" : "PNG-Logo wählen…", x + 48, footerY + 36, w - 48, 24, session.ready() && !session.busy(), false, chooseLogo);
-        if (session.hasLogo()) button(g, "remove-logo", "Logo entfernen", x + 48, footerY + 62, w - 48, 20, !session.busy(), false, session::removeLogo);
-        else text(g, "Quadratisches PNG", x + 48, footerY + 76, SMALL, MUTED);
-        button(g, "export", "Exportieren", x, footerY + 88, 100, 30, session.selectedCount() > 0 && !session.busy(), false, () -> session.export(false, draftName()));
-        button(g, "activate", "Speichern & aktivieren", x + 106, footerY + 88, w - 106, 30, session.selectedCount() > 0 && !session.busy(), true, () -> session.export(true, draftName()));
+        text(g,"Quell-Pack",controlsX,y+190,LABEL,TEXT);
+        text(g,clip(g,session.packName(ref.pack()),controlsW,BODY),controlsX,y+212,BODY,TEXT);
+        text(g,clip(g,ref.path(),controlsW,SMALL),controlsX,y+234,SMALL,MUTED);
+        text(g,ref.path().equals(ModelLoader.CRYSTAL_ITEM)&&session.previewModel()!=null?"3D: Entity · 2D: Inventar-Icon":"Ziehen: drehen · Mausrad: zoomen",controlsX,y+h-134,SMALL,MUTED);
+        boolean enabled=session.ready()&&!session.busy();
+        button(g,"favorite",session.isFavorite(ref)?"Favorit gespeichert":"Als Favorit speichern",controlsX,y+h-112,controlsW,30,enabled,false,session::favorite);
+        String select=session.isSelected(ref)?"Aus Pack entfernen":session.replacesOther(ref)?"Vorhandene Textur ersetzen":"In mein Pack übernehmen";
+        button(g,"select",select,controlsX,y+h-72,controlsW,36,enabled,!session.isSelected(ref),session::select);
+        if(session.error())text(g,clip(g,session.status(),w-48,SMALL),x+24,y+h-12,SMALL,ERROR);
+        g.setComposite(composite);
     }
     private void input(Graphics2D g, String id, String placeholder, String value, int x, int y, int w, int h) {
-        fill(g, x, y, w, h, BG); outline(g, x, y, w, h, focus.equals(id) ? ACCENT : MUTED);
-        if (focus.equals(id) && allTextSelected) fill(g, x + 8, y + 5, Math.min(w - 16, FormattedText.width(g,value,BODY) + 3), h - 10, SECONDARY);
-        String visible = clip(g, value.isEmpty() ? placeholder : value, w - 22, BODY);
-        text(g, visible, x + 10, y + h / 2 + 5, BODY, value.isEmpty() ? MUTED : TEXT);
-        if (focus.equals(id) && !allTextSelected) { int caret = x + 11 + FormattedText.width(g,visible,BODY); line(g, caret, y + 9, caret, y + h - 9, ACCENT); }
-        hit(g, new Hit(id, placeholder, new Rectangle(x,y,w,h), session.ready(), () -> { if (id.equals("name") && !nameEdited) nameDraft = session.name(); allTextSelected = false; }));
+        round(g, x, y, w, h, CONTROL_RADIUS,BG);
+        roundOutline(g,x,y,w,h,CONTROL_RADIUS,focus.equals(id)?ACCENT:BORDER);
+        int inset=id.equals("search")?34:10;
+        if (focus.equals(id) && allTextSelected) fill(g, x + inset, y + 5, Math.min(w - inset - 8, FormattedText.width(g,value,BODY) + 3), h - 10, SECONDARY);
+        if(id.equals("search"))UiIcons.draw(g,"search",x+10,y+(h-16)/2,MUTED);
+        String visible = clip(g, value.isEmpty() ? placeholder : value, w - inset - 12, BODY);
+        text(g, visible, x + inset, y + h / 2 + 5, BODY, value.isEmpty() ? MUTED : TEXT);
+        if (focus.equals(id) && !allTextSelected) { int caret = x + inset + 1 + (value.isEmpty()?0:FormattedText.width(g,visible,BODY)); line(g, caret, y + 9, caret, y + h - 9, ACCENT); }
+        hit(g, new Hit(id, placeholder, new Rectangle(x,y,w,h), session.ready()&&!identitySaving, () -> { if (id.equals("name") && !nameEdited) nameDraft = session.name(); allTextSelected = false; }));
     }
     private void button(Graphics2D g, String id, String label, int x, int y, int w, int h, boolean enabled, boolean primary, Runnable action) {
         button(g,id,label,x,y,w,h,enabled,primary,action,BODY);
     }
     private void button(Graphics2D g, String id, String label, int x, int y, int w, int h, boolean enabled, boolean primary, Runnable action,Font font) {
-        Color fill = primary && enabled ? PRIMARY : SURFACE;
-        fill(g, x, y, w, h, fill);
-        if (!primary) outline(g, x, y, w, h, BORDER);
-        String displayed = clip(g, label, w - 16, font);
-        text(g, displayed, x + (w - FormattedText.width(g,displayed,font)) / 2, y + h / 2 + 5, font, enabled ? (primary ? WHITE : TEXT) : MUTED);
+        boolean segment=id.startsWith("mode")||id.startsWith("armor:")||id.startsWith("tool:")||id.startsWith("category-option:");
+        boolean quiet=id.equals("pack")||id.equals("close")||id.equals("animations")||id.equals("remove-logo");
+        boolean selected=segment&&primary&&enabled;
+        Color fill=selected?SECONDARY:primary&&enabled?PRIMARY:quiet?BG:SURFACE;
+        if(!quiet&&!segment)round(g,x,y+2,w,h,CONTROL_RADIUS,BG);
+        round(g,x,y,w,h,CONTROL_RADIUS,fill);
+        if(!quiet&&!segment)roundOutline(g,x,y,w,h,CONTROL_RADIUS,BORDER);
+        if(primary&&enabled&&!segment)line(g,x+8,y+1,x+w-9,y+1,ACCENT);
+        if(selected)round(g,x+8,y+h-3,w-16,2,2,ACCENT);
+        String icon=switch(id){case "export"->"download";case "favorite"->"star";default->"";};
+        int iconSpace=icon.isEmpty()?0:22;
+        String displayed = clip(g, label, w - 16 - iconSpace - (id.equals("category")?20:0), font);
+        int labelX=x+(w-FormattedText.width(g,displayed,font)-iconSpace)/2;
+        if(!icon.isEmpty())UiIcons.draw(g,icon,labelX,y+(h-16)/2,enabled?TEXT:MUTED);
+        if(id.equals("category"))UiIcons.draw(g,"chevron-down",x+w-22,y+(h-16)/2,MUTED);
+        text(g, displayed, labelX+iconSpace, y + h / 2 + 5, font, enabled ? (selected?ACCENT:primary?WHITE:quiet?MUTED:TEXT) : MUTED);
         hit(g, new Hit(id, label, new Rectangle(x,y,w,h), enabled, action));
     }
     private void hit(Graphics2D g, Hit hit) {
@@ -396,13 +466,13 @@ public final class EditorCanvas {
         float hoverAlpha=hit.id.equals(hover)?progress:hit.id.equals(previousHover)?1-progress:0;
         if(hoverAlpha>0) {
             Graphics2D effect=(Graphics2D)g.create();alpha(effect,hoverAlpha);
-            outline(effect,hit.box.x,hit.box.y,hit.box.width,hit.box.height,MUTED);effect.dispose();
+            roundOutline(effect,hit.box.x,hit.box.y,hit.box.width,hit.box.height,CONTROL_RADIUS,MUTED);effect.dispose();
         }
         if(hit.id.equals(pressed)) {
             Graphics2D effect=(Graphics2D)g.create();alpha(effect,.16f*(1-motion.progress(PRESS,frameTime)));
-            fill(effect,hit.box.x,hit.box.y,hit.box.width,hit.box.height,ACCENT);effect.dispose();
+            round(effect,hit.box.x,hit.box.y,hit.box.width,hit.box.height,CONTROL_RADIUS,ACCENT);effect.dispose();
         }
-        if(hit.id.equals(focus))outline(g,hit.box.x,hit.box.y,hit.box.width,hit.box.height,ACCENT);
+        if(hit.id.equals(focus))roundOutline(g,hit.box.x,hit.box.y,hit.box.width,hit.box.height,CONTROL_RADIUS,ACCENT);
     }
     public void mouseMove(int x, int y) {
         String next = hits.stream().filter(h -> h.enabled && h.box.contains(x,y)).map(Hit::id).reduce((a,b) -> b).orElse("");
@@ -415,24 +485,29 @@ public final class EditorCanvas {
             if (!hit.box.contains(x,y)) continue;
             if (!hit.enabled) return true;
             focus = hit.id; allTextSelected = false; activate(hit); dirty = true;
-            dragging = focus.equals("viewport"); return true;
+            dragging = hit.id.equals("viewport"); return true;
         }
+        if(previewMenu){if(!previewDialogBounds.contains(x,y))closePreview();return true;}
+        if(identityMenu||projectsMenu)return true;
         focus = categoryMenu ? "category" : "";categoryMenu=false; dirty = true; return true;
     }
     public boolean drag(double dx, double dy) {
-        if (projectsMenu || !dragging || mode == PreviewRenderer.Mode.FLAT) return false;
+        if (identityMenu || projectsMenu || !dragging || mode == PreviewRenderer.Mode.FLAT) return false;
         yaw += dx * .012; pitch = Math.clamp(pitch + dy * .012, -1.5, 1.5); dirty = true; return true;
     }
     public void release() { dragging = false; }
     public boolean scroll(int x, int y, double amount) {
+        if(identityMenu)return true;
         if (projectsMenu) { projectPage=Math.clamp(projectPage-(int)Math.signum(amount),0,Math.max(0,(session.projects().size()-1)/projectPageSize()));dirty=true;return true; }
         if(categoryMenu){categoryIndex=Math.floorMod(categoryIndex-(int)Math.signum(amount),TextureCategory.values().length);focus="category-option:"+categoryIndex;dirty=true;return true;}
         if (viewport.contains(x,y)) { zoom = Math.clamp(zoom + amount * .12, .4, 2.5); dirty = true; return true; }
+        if(previewMenu)return true;
         int count=showingPacks()?session.visiblePacks().size():session.visible().size();
         scroll = Math.clamp(scroll - (int)Math.signum(amount) * pageSize, 0, Math.max(0, ((count - 1) / pageSize) * pageSize));
         dirty = true; return true;
     }
     public boolean type(int codepoint) {
+        if(identitySaving)return true;
         if (projectsMenu) return true;
         if (!focus.equals("search") && !focus.equals("name")) return false;
         if (!Character.isValidCodePoint(codepoint) || Character.isISOControl(codepoint)) return false;
@@ -440,6 +515,9 @@ public final class EditorCanvas {
         setText(value + new String(Character.toChars(codepoint))); allTextSelected = false; return true;
     }
     public boolean key(int key, boolean shift, boolean control, String clipboard, Consumer<String> copy) {
+        if(identitySaving)return true;
+        if(previewMenu&&key==256){closePreview();return true;}
+        if(identityMenu&&key==256){if(!session.busy())dismissIdentity();return true;}
         if (projectsMenu && key==256) { if(!session.busy()){projectsMenu=false;focus="projects";dirty=true;}return true; }
         if(categoryMenu) {
             if(key==256){categoryMenu=false;focus="category";dirty=true;return true;}
@@ -469,14 +547,21 @@ public final class EditorCanvas {
                 else if (!value.isEmpty()) setText(value.substring(0, value.offsetByCodePoints(value.length(), -1)));
                 allTextSelected = false; return true;
             }
-            if (key == 257 || key == 335) { if (focus.equals("name")) session.rename(nameDraft); focus = ""; dirty = true; return true; }
+            if (key == 257 || key == 335) { if(identityMenu)dismissIdentity();else {if (focus.equals("name")) session.rename(nameDraft);focus="";} dirty = true; return true; }
             return false;
+        }
+        if(identityMenu) {
+            if(key==257||key==335||key==32)hits.stream().filter(h->h.enabled&&h.id.equals(focus)).findFirst().ifPresent(this::activate);
+            dirty=true;return true;
         }
         if (focus.equals("viewport")) {
             if (key == 263 || key == 262) yaw += (key == 263 ? -.12 : .12);
             if (key == 265 || key == 264) pitch = Math.clamp(pitch + (key == 265 ? -.12 : .12), -1.5, 1.5);
             if (key == 61 || key == 45) zoom = Math.clamp(zoom + (key == 61 ? .1 : -.1), .4, 2.5);
             dirty = true;
+        }
+        if(previewMenu&&key==32&&!focus.equals("viewport")) {
+            hits.stream().filter(h->h.enabled&&h.id.equals(focus)).findFirst().ifPresent(this::activate);dirty=true;return true;
         }
         if (key == 70) { session.favorite(); return true; }
         if (key == 32) { session.select(); return true; }
@@ -504,8 +589,9 @@ public final class EditorCanvas {
         for(int iy=0;iy<h;iy+=12) for(int ix=0;ix<w;ix+=12) if((ix/12+iy/12)%2==0) fill(g,x+ix,y+iy,Math.min(12,w-ix),Math.min(12,h-iy),CHECKER);
     }
     private static void fill(Graphics2D g,int x,int y,int w,int h,Color c) { g.setColor(c); g.fillRect(x,y,w,h); }
+    private static void round(Graphics2D g,int x,int y,int w,int h,int radius,Color c) { g.setColor(c);g.fillRoundRect(x,y,w,h,radius,radius); }
+    private static void roundOutline(Graphics2D g,int x,int y,int w,int h,int radius,Color c) { g.setColor(c);g.drawRoundRect(x,y,w-1,h-1,radius,radius); }
     private static void line(Graphics2D g,int x,int y,int ex,int ey,Color c) { g.setColor(c); g.drawLine(x,y,ex,ey); }
-    private static void outline(Graphics2D g,int x,int y,int w,int h,Color c) { g.setColor(c); g.drawRect(x,y,w-1,h-1); }
     private static void text(Graphics2D g,String s,int x,int y,Font f,Color c) { FormattedText.draw(g,s,x,y,f,c); }
     private static String clip(Graphics2D g,String s,int w,Font f) {
         return FormattedText.clip(g,s,w,f);

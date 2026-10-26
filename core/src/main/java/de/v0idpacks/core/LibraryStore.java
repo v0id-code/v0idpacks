@@ -136,6 +136,14 @@ public final class LibraryStore {
     public synchronized void select(TextureRef ref, PackCatalog catalog) throws IOException {
         State state = state();
         Map<String, TextureRef> selected = new TreeMap<>(state.selected());
+        if (CrystalTextures.contains(ref.path())) {
+            String companion = CrystalTextures.companion(ref.path());
+            if (catalog.readAsset(ref.pack(), companion) == null)
+                throw new IOException("End Crystal: " + companion + " fehlt im Quell-Pack. Inventar und Entity müssen gemeinsam aus demselben Pack übernommen werden.");
+            // Validate and snapshot both files before committing either replacement.
+            TextureRef other = snapshot(new TextureRef(ref.pack(), companion, ""), catalog);
+            selected.put(companion, other);
+        }
         selected.put(ref.path(), snapshot(ref, catalog));
         commit(new State(1, state.name(), state.favorites(), selected, state.logo()));
     }
@@ -143,6 +151,7 @@ public final class LibraryStore {
         State state = state();
         Map<String, TextureRef> selected = new TreeMap<>(state.selected());
         selected.remove(path);
+        if (CrystalTextures.contains(path)) selected.remove(CrystalTextures.companion(path));
         commit(new State(1, state.name(), state.favorites(), selected, state.logo()));
     }
     public synchronized void rename(String name) throws IOException {

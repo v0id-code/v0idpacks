@@ -24,13 +24,15 @@ Benötigt werden **Fabric Loader ab 0.20.1** und die passende **Fabric API**. Di
 
 ## Bedienung
 
-Quell-Packs in `resourcepacks` ablegen, im Editor eine Textur auswählen und **In mein Pack übernehmen** anklicken. **Speichern & aktivieren** exportiert und aktiviert deine Zusammenstellung; **Exportieren** erstellt nur das ZIP.
+Quell-Packs in `resourcepacks` ablegen und **resourcepacks reloaden** wählen. Die Tabs **Bibliothek**, **Favoriten** und **Mein Pack** stehen oben; das Raster nutzt die ganze Breite. Ein Klick auf eine Textur öffnet die große Vorschau mit Drehen/Zoomen, Darstellungsmodi und **In mein Pack übernehmen**. **Zurück**, Escape oder ein Klick auf den abgedunkelten Hintergrund kehrt zur bisherigen Rasterseite zurück; Suche und Filter bleiben erhalten. **Speichern & aktivieren** exportiert und aktiviert deine Zusammenstellung; **Exportieren** erstellt nur das ZIP.
 
-Unter **Name im Spiel** den gewünschten Pack-Namen eingeben. **PNG-Logo wählen…** öffnet die Dateiauswahl für ein quadratisches PNG; die Vorschau erscheint direkt daneben. Das Logo wird lokal kopiert und kann wieder entfernt werden. Beim Export wird der eingegebene Name automatisch gespeichert; **OK** speichert ihn auch ohne Export. Mit installierter Mod zeigt Minecraft den Namen ohne technischen Dateizusatz in der Ressourcenpaket-Liste an. Das ZIP enthält das Logo als `pack.png` und den Namen in der Beschreibung; sein Dateiname enthält zusätzlich eine eindeutige Kennung für sichere Aktualisierungen.
+Die untere Pack-Leiste bündelt Name, Texturanzahl und Export. Über **Anpassen** öffnet sich der Dialog für **Name im Spiel** und Logo. **PNG-Logo wählen…** öffnet die Dateiauswahl für ein quadratisches PNG; die Vorschau erscheint direkt daneben. Das Logo wird lokal kopiert und kann wieder entfernt werden. **Fertig**, Enter im Namensfeld oder Escape speichert den Namen und schließt den Dialog; ein leerer Name bleibt zur Korrektur geöffnet. Beim Export wird der aktuelle Name ebenfalls gespeichert. Mit installierter Mod zeigt Minecraft den Namen ohne technischen Dateizusatz in der Ressourcenpaket-Liste an. Das ZIP enthält das Logo als `pack.png` und den Namen in der Beschreibung; sein Dateiname enthält zusätzlich eine eindeutige Kennung für sichere Aktualisierungen.
 
-Über **Packs verwalten** → **Neues Pack** eine weitere Zusammenstellung anlegen. In derselben Übersicht ein vorhandenes Pack zum Weiterbearbeiten auswählen. Jedes Projekt speichert seinen Namen, sein Logo und seine Texturauswahl unabhängig; Favoriten stehen in allen Projekten zur Verfügung. Beim Wechsel wird auch der eingegebene Name gespeichert. Nach einem Neustart öffnet sich das zuletzt bearbeitete Projekt. Vorhandene Ein-Pack-Projekte werden automatisch übernommen. Das Bearbeiten allein aktiviert kein Pack; **Speichern & aktivieren** ersetzt nur frühere Exporte desselben Projekts und lässt andere aktive Packs bestehen.
+Über **Meine Packs** → **Neues Pack** eine weitere Zusammenstellung anlegen. In derselben Übersicht ein vorhandenes Pack zum Weiterbearbeiten auswählen. Jedes Projekt speichert seinen Namen, sein Logo und seine Texturauswahl unabhängig; Favoriten stehen in allen Projekten zur Verfügung. Beim Wechsel wird auch der eingegebene Name gespeichert. Nach einem Neustart öffnet sich das zuletzt bearbeitete Projekt. Vorhandene Ein-Pack-Projekte werden automatisch übernommen. Das Bearbeiten allein aktiviert kein Pack; **Speichern & aktivieren** ersetzt nur frühere Exporte desselben Projekts und lässt andere aktive Packs bestehen.
 
 Original-Packs bleiben unverändert. Favoriten und Projekte liegen unter `config/v0idpacks`, Exporte unter `resourcepacks`. Exportiert werden Texturen und Animationsmetadaten; Custom-Modelle, Shader und OptiFine-CIT/CTM werden nicht mit übernommen.
+
+Beim End Crystal werden Inventar-Icon und Entity-Textur gemeinsam aus demselben Quell-Pack übernommen, ersetzt und entfernt. Das Quell-Pack muss beide Dateien enthalten; fehlt eine davon oder ist sie beschädigt, bleibt die bisherige Auswahl erhalten. Bei bereits übernommenen Crystals nutzt die Vorschau die gespeicherten Projekttexturen, die auch exportiert werden. Auto zeigt den platzierten Crystal, 2D das Inventar-Icon. Bei älteren unvollständigen oder gemischten Crystal-Auswahlen den gewünschten Crystal erneut übernehmen; bis dahin wird der Export mit einem Hinweis abgewiesen.
 
 ## Selbst bauen
 
@@ -51,6 +53,8 @@ bash gradlew release -PmcVersion=1.21.4
 Die JAR liegt anschließend unter `artifacts/<Mod-Version>/`. Der Build führt auch die Core-Tests aus. Weitere Prüfungen: [Verifikation](docs/VERIFICATION.md).
 
 ## Automatische Website-Downloads
+
+Änderungen stehen im [Changelog](CHANGELOG.md). Der Abschnitt zur aktuellen Mod-Version wird auch in die GitHub-Release-Notes übernommen.
 
 Ein Push auf `main` baut und testet alle Minecraft-Versionen aus `versions.json`. Erst wenn die gesamte Matrix erfolgreich ist, veröffentlicht der Workflow `.github/workflows/build.yml` die Produktions-JARs und SHA-256-Prüfsummen als GitHub-Release. Pull Requests und andere Branches veröffentlichen nichts. Über **Run workflow** lässt sich derselbe Ablauf für `main` auch manuell starten.
 

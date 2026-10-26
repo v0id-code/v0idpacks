@@ -157,7 +157,11 @@ public final class EditorSession implements AutoCloseable {
     public boolean isSelected(TextureRef ref) {
         if (!ready()) return false;
         TextureRef selection = library.state().selected().get(ref.path());
-        return selection != null && selection.key().equals(ref.key());
+        if (selection == null || !selection.key().equals(ref.key())) return false;
+        // Legacy single files must remain removable from "Mein Pack", even without their source.
+        if (!CrystalTextures.contains(ref.path()) || tab == Tab.SELECTED) return true;
+        TextureRef companion = library.state().selected().get(CrystalTextures.companion(ref.path()));
+        return companion != null && companion.pack().equals(ref.pack());
     }
     public boolean replacesOther(TextureRef ref) {
         return ready() && library.state().selected().containsKey(ref.path()) && !isSelected(ref);
@@ -198,17 +202,45 @@ public final class EditorSession implements AutoCloseable {
                         && (categoryFilter != TextureCategory.TOOLS || toolTypeFilter.matches(t)) && t.matches(query))
                 .sorted(Comparator.comparing(TextureRef::name).thenComparing(TextureRef::pack)).toList();
         revision++;
+        if (focused != null && CrystalTextures.contains(focused.path())) reloadPreview();
+    }
+    private void reloadPreview() {
+        TextureRef previous = focused; focused = null; focus(previous);
     }
     public void focus(TextureRef ref) {
         if (Objects.equals(focused, ref)) return;
         focused = ref; preview = null;previewModel=null;modelNote=""; previewError = ""; revision++;
         long token = ++previewGeneration;
         if (ref == null) return;
+        Map<String, TextureRef> selected = library.state().selected();
+        TextureRef stored = selected.get(ref.path());
+        boolean projectPreview = CrystalTextures.contains(ref.path())
+                && (tab == Tab.SELECTED || stored != null && stored.key().equals(ref.key()));
+        TextureRef displayed = projectPreview && stored != null ? stored : ref;
         io.execute(() -> {
             try {
-                TextureImage image = TextureImage.decode(data(ref));
+                TextureImage image = TextureImage.decode(data(displayed));
                 PreviewModel model=null;String note="";
-                try {model=ModelLoader.load(ref,image,path->{byte[] asset=catalog.readAsset(ref.pack(),path);return asset!=null?asset:fallbackAssets.read(path);});}
+                try {model=ModelLoader.load(displayed,image,path -> {
+                    boolean metadata = path.endsWith(".mcmeta");
+                    String texture = metadata ? path.substring(0, path.length() - 7) : path;
+                    if (projectPreview) {
+                        TextureRef dependency = selected.get(texture);
+                        if (dependency != null) {
+                            PackCatalog.Data saved = library.read(dependency);
+                            return metadata ? saved.metadata() : saved.png();
+                        }
+                    } else {
+                        byte[] asset = catalog.readAsset(ref.pack(),path);
+                        if (asset != null) return asset;
+                    }
+                    // A missing crystal partner must never silently come from an active pack.
+                    if (CrystalTextures.contains(texture)) {
+                        if (metadata) return null;
+                        throw new IOException("End Crystal: Entity-Textur fehlt " + (projectPreview ? "im Projekt. Crystal erneut übernehmen." : "im Quell-Pack."));
+                    }
+                    return fallbackAssets.read(path);
+                });}
                 catch(Exception e){note="Modell nicht verfügbar: "+reason(e);}
                 PreviewModel loaded=model;String detail=note;
                 completed.add(() -> { if (token == previewGeneration) { preview = image;previewModel=loaded;modelNote=detail; revision++; } });
@@ -261,8 +293,14 @@ public final class EditorSession implements AutoCloseable {
     public void select() {
         TextureRef ref = focused; if (ref == null) return;
         boolean removing = isSelected(ref);
-        run("Auswahl wird gespeichert…", () -> { if (removing) library.remove(ref.path()); else library.select(ref, catalog); },
-                removing ? "Textur aus deinem Pack entfernt." : "Textur im Projekt gespeichert. Zum Anwenden Pack exportieren.");
+        boolean crystal = CrystalTextures.contains(ref.path());
+        run("Auswahl wird gespeichert…", () -> {
+            if (removing) library.remove(ref.path()); else library.select(ref, catalog);
+            if (removing) completed.add(() -> {
+                if (tab == Tab.SELECTED && Objects.equals(focused, ref)) focus(null);
+            });
+        }, crystal ? (removing ? "Crystal mit Inventar- und Entity-Textur entfernt." : "Crystal: Inventar und Entity aus demselben Pack gespeichert. Zum Anwenden Pack exportieren.")
+                : removing ? "Textur aus deinem Pack entfernt." : "Textur im Projekt gespeichert. Zum Anwenden Pack exportieren.");
     }
     public void rename(String name) {
         if (name.strip().isEmpty()) { message("Bitte einen Pack-Namen eingeben.", true); return; }

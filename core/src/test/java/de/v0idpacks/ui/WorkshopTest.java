@@ -10,6 +10,7 @@ import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static de.v0idpacks.ui.CanvasControls.clickControl;
 
 class WorkshopTest {
     @TempDir Path temp;
@@ -71,12 +72,12 @@ class WorkshopTest {
     @Test void browserSearchFavoritesSelectionAndExportSurviveReopening() throws Exception {
         prepare();assertEquals(18,session.visible().size());
         EditorCanvas canvas=new EditorCanvas(session,()->{});canvas.draw();
-        assertTrue(canvas.showingPacks());canvas.click(250,220,0);canvas.draw();
+        assertTrue(canvas.showingPacks());clickControl(canvas,canvas.firstControl("source:"));canvas.draw();
         assertFalse(canvas.showingPacks());assertFalse(session.packFilter().isEmpty());assertEquals(9,session.visible().size());
-        canvas.click(250,120,0);canvas.draw();assertTrue(canvas.showingPacks());
-        canvas.click(250,120,0);canvas.draw();assertFalse(canvas.showingPacks());
-        canvas.click(250,80,0);for(char c:"diamond sword ocean".toCharArray()) canvas.type(c);
-        assertEquals(1,session.visible().size());canvas.draw();canvas.click(250,230,0);
+        clickControl(canvas,"pack");canvas.draw();assertTrue(canvas.showingPacks());
+        clickControl(canvas,"pack");canvas.draw();assertFalse(canvas.showingPacks());
+        clickControl(canvas,"search");for(char c:"diamond sword ocean".toCharArray()) canvas.type(c);
+        assertEquals(1,session.visible().size());canvas.draw();clickControl(canvas,canvas.firstControl("tile:"));
         assertNotNull(session.focused());session.favorite();await();session.select();await();
         assertEquals(1,session.favoriteCount());assertEquals(1,session.selectedCount());
         session.export(true);await();
@@ -99,18 +100,18 @@ class WorkshopTest {
         session.filter(EditorSession.Tab.ALL,"no-match","");ImageIO.write(canvas.draw(),"png",dir.resolve("empty-search.png").toFile());
         session.filter(EditorSession.Tab.SELECTED,"","");canvas.resize(800,480);ImageIO.write(canvas.draw(),"png",dir.resolve("small-window.png").toFile());
     }
-    @Test void editedNameExportsWithoutOkAndLogoSurvivesReopening() throws Exception {
+    @Test void identityDialogSavesNameAndLogoBeforeExportAndSurvivesReopening() throws Exception {
         prepare(); session.focus(session.visible().getFirst()); session.select(); await();
         Path logo = temp.resolve("my-logo.png"); ImageIO.write(sword(0xff29addd), "png", logo.toFile());
         int[] choices = {0};
         EditorCanvas canvas = new EditorCanvas(session, () -> {}, () -> { choices[0]++; session.importLogo(logo); });
-        canvas.draw(); canvas.click(900,540,0); await(); canvas.draw();
+        canvas.draw(); clickControl(canvas,"identity");clickControl(canvas,"logo");await();canvas.draw();
         assertEquals(1, choices[0]); assertTrue(session.hasLogo()); assertNotNull(session.logo());
-        canvas.click(870,505,0); canvas.key(65,false,true,"",s -> {});
+        clickControl(canvas,"name"); canvas.key(65,false,true,"",s -> {});
         for (char c : "Mein Über-Pack".toCharArray()) canvas.type(c);
-        canvas.draw(); canvas.click(870,595,0); await();
+        clickControl(canvas,"identity-close");await();canvas.draw();clickControl(canvas,"export");await();
         assertEquals("Mein Über-Pack", session.name()); assertFalse(session.error());
-        canvas.draw(); canvas.click(870,505,0);
+        clickControl(canvas,"identity");clickControl(canvas,"name");
         assertTrue(canvas.narration().contains("Pack-Name"));
         Path dir=Path.of("build/previews"); Files.createDirectories(dir);
         ImageIO.write(canvas.draw(), "png", dir.resolve("pack-identity.png").toFile());
@@ -121,31 +122,36 @@ class WorkshopTest {
         assertEquals("Mein Über-Pack", session.name()); assertNotNull(session.logo());
         session.removeLogo(); await(); assertNull(session.logo()); assertFalse(session.hasLogo());
     }
-    @Test void emptyNameDoesNotSilentlyExportOldName() throws Exception {
+    @Test void invalidIdentityStaysOpenAndCannotTriggerExportBehindDialog() throws Exception {
         prepare(); session.focus(session.visible().getFirst()); session.select(); await();
         EditorCanvas canvas = new EditorCanvas(session, () -> {}); canvas.draw();
-        canvas.click(870,505,0); canvas.key(65,false,true,"",s -> {}); canvas.key(259,false,false,"",s -> {});
-        canvas.draw(); canvas.click(870,595,0); await();
+        var export=canvas.controlBounds("export");
+        clickControl(canvas,"identity");clickControl(canvas,"name");canvas.key(65,false,true,"",s -> {});canvas.key(259,false,false,"",s -> {});
+        clickControl(canvas,"identity-close");await();canvas.draw();
         assertTrue(session.error()); assertTrue(session.status().contains("Pack-Namen"));
+        assertDoesNotThrow(()->canvas.controlBounds("name"));
+        canvas.click(export.x+export.width/2,export.y+export.height/2,0);
+        canvas.key(70,false,false,"",s->{});canvas.key(32,false,false,"",s->{});
+        assertEquals(0,session.favoriteCount());assertEquals(1,session.selectedCount());
         try (var files = Files.list(temp.resolve("resourcepacks"))) { assertFalse(files.anyMatch(p -> p.toString().endsWith(".zip"))); }
     }
     @Test void projectManagerCreatesSwitchesAndPreservesNameDraft() throws Exception {
         prepare(); session.focus(session.visible().getFirst());session.select();await();
         String first=session.projectId();
         EditorCanvas canvas=new EditorCanvas(session,()->{});canvas.draw();
-        canvas.click(870,505,0);canvas.key(65,false,true,"",s->{});
+        clickControl(canvas,"identity");clickControl(canvas,"name");canvas.key(65,false,true,"",s->{});
         for(char c:"Mein erstes Pack".toCharArray())canvas.type(c);
-        canvas.draw();canvas.click(60,212,0);canvas.draw();
+        clickControl(canvas,"identity-close");await();canvas.draw();clickControl(canvas,"projects");canvas.draw();
         // New pack has keyboard focus; the modal blocks the global selection shortcut.
         canvas.key(257,false,false,"",s->{});await();canvas.draw();
         String second=session.projectId();assertNotEquals(first,second);assertEquals(0,session.selectedCount());
         assertEquals(EditorSession.Tab.SELECTED,session.tab());assertNull(session.focused());
         assertEquals("Mein erstes Pack",session.projects().get(first).name());
-        canvas.click(60,212,0);canvas.draw();canvas.click(420,200,0);await();canvas.draw();
+        clickControl(canvas,"projects");canvas.draw();canvas.click(420,200,0);await();canvas.draw();
         assertEquals(first,session.projectId());assertEquals("Mein erstes Pack",session.name());assertEquals(1,session.selectedCount());
         assertEquals("Mein v0idpack 2",session.projects().get(second).name());
         session.importLogo(temp.resolve("missing.png"),second);assertTrue(session.error());assertFalse(session.hasLogo());
-        canvas.click(60,212,0);canvas.draw();
+        clickControl(canvas,"projects");canvas.draw();
         Path dir=Path.of("build/previews");Files.createDirectories(dir);
         canvas.resize(760,440);ImageIO.write(canvas.draw(),"png",dir.resolve("project-manager-small.png").toFile());
         canvas.key(256,false,false,"",s->{});canvas.draw();
@@ -153,6 +159,65 @@ class WorkshopTest {
         assertEquals(3,session.projects().size());
         LibraryStore reopened=new LibraryStore(temp.resolve("config"));assertEquals(session.projectId(),reopened.projectId());
         assertEquals("Mein erstes Pack",reopened.projects().get(first).name());
+    }
+    @Test void identityKeyboardStaysInDialogAndEscapeSavesWithoutClosingEditor() throws Exception {
+        prepare();session.focus(session.visible().getFirst());await();
+        int[] closed={0};EditorCanvas canvas=new EditorCanvas(session,()->closed[0]++);canvas.resize(760,440);canvas.draw();
+        clickControl(canvas,"identity");canvas.draw();
+        assertFalse(canvas.drag(20,20));assertTrue(canvas.scroll(0,0,1));
+        canvas.key(65,false,true,"",s->{});for(char c:"Überblick".toCharArray())canvas.type(c);
+        canvas.key(258,false,false,"",s->{});canvas.draw();assertTrue(canvas.narration().contains("PNG-Logo wählen"));
+        canvas.key(70,false,false,"",s->{});canvas.key(32,false,false,"",s->{});await();
+        assertEquals(0,session.favoriteCount());assertEquals(0,session.selectedCount());
+        canvas.key(258,true,false,"",s->{});canvas.draw();assertTrue(canvas.narration().contains("Pack-Name"));
+        canvas.key(256,false,false,"",s->{});await();canvas.draw();
+        assertEquals("Überblick",session.name());assertEquals(0,closed[0]);
+        assertDoesNotThrow(()->canvas.controlBounds("identity"));
+        assertThrows(NoSuchElementException.class,()->canvas.controlBounds("name"));
+        clickControl(canvas,"identity");canvas.draw();canvas.key(65,false,true,"",s->{});
+        for(char c:"Enter speichert".toCharArray())canvas.type(c);
+        canvas.key(257,false,false,"",s->{});await();canvas.draw();assertEquals("Enter speichert",session.name());
+        canvas.key(256,false,false,"",s->{});assertEquals(1,closed[0]);
+    }
+    @Test void wideLibraryOpensAnIsolatedPreviewAndReturnsToTheSameFilteredGrid() throws Exception {
+        prepare();session.browseCategory(TextureCategory.SWORDS);session.search("diamond");
+        int[] closed={0};EditorCanvas canvas=new EditorCanvas(session,()->closed[0]++);canvas.resize(760,440);canvas.draw();
+        assertThrows(NoSuchElementException.class,()->canvas.controlBounds("viewport"));
+        assertTrue(canvas.controlBounds("search").x<40);
+        clickControl(canvas,"refresh");await();canvas.draw();assertTrue(session.status().contains("Packs"));
+        String tile=canvas.firstControl("tile:");
+        var before=canvas.controlBounds(tile);clickControl(canvas,tile);canvas.draw();
+        assertFalse(canvas.drag(20,20)); // A tile click must not start rotating the new preview.
+        assertThrows(NoSuchElementException.class,()->canvas.controlBounds("refresh"));
+        var viewport=canvas.controlBounds("viewport");assertTrue(viewport.width>300);assertTrue(viewport.height>250);
+        // Empty dialog space consumes clicks; only the backdrop dismisses it.
+        canvas.click(500,100,0);canvas.draw();assertDoesNotThrow(()->canvas.controlBounds("viewport"));
+        clickControl(canvas,"viewport");assertTrue(canvas.drag(16,8));canvas.release();
+        canvas.scroll(0,0,-1);assertEquals("diamond",session.query());assertEquals(TextureCategory.SWORDS,session.categoryFilter());
+        clickControl(canvas,"favorite");await();assertEquals(1,session.favoriteCount());
+        clickControl(canvas,"select");await();assertEquals(1,session.selectedCount());
+        Path out=Path.of("build/previews");Files.createDirectories(out);
+        for(int i=0;i<30;i++){canvas.draw();session.poll();Thread.sleep(10);}
+        canvas.mouseMove(viewport.x+10,viewport.y+10);ImageIO.write(canvas.draw(),"png",out.resolve("texture-preview-small.png").toFile());
+        canvas.resize(1120,660);ImageIO.write(canvas.draw(),"png",out.resolve("texture-preview.png").toFile());
+        canvas.resize(760,440);canvas.draw();canvas.key(256,false,false,"",s->{});canvas.draw();
+        assertEquals(0,closed[0]);assertEquals(before,canvas.controlBounds(tile));
+        assertEquals("diamond",session.query());assertEquals(TextureCategory.SWORDS,session.categoryFilter());
+        clickControl(canvas,tile);canvas.draw();clickControl(canvas,"preview-close");canvas.draw();
+        assertThrows(NoSuchElementException.class,()->canvas.controlBounds("viewport"));
+        clickControl(canvas,tile);canvas.draw();canvas.click(4,4,0);canvas.draw();
+        assertDoesNotThrow(()->canvas.controlBounds("search"));
+        canvas.key(256,false,false,"",s->{});assertEquals(1,closed[0]);
+    }
+    @Test void previewReturnsToTheSamePageAndSpaceOnBackNeverSelectsATexture() throws Exception {
+        prepare();EditorCanvas canvas=new EditorCanvas(session,()->{});canvas.resize(760,440);canvas.draw();
+        clickControl(canvas,"pack");canvas.draw();clickControl(canvas,"next");canvas.draw();
+        String tile=canvas.firstControl("tile:");var position=canvas.controlBounds(tile);
+        clickControl(canvas,tile);canvas.draw();clickControl(canvas,"viewport");canvas.key(258,true,false,"",s->{});canvas.draw();
+        assertTrue(canvas.narration().contains("Zurück"));
+        canvas.key(32,false,false,"",s->{});canvas.draw();assertEquals(0,session.selectedCount());
+        assertEquals(position,canvas.controlBounds(tile));
+        assertThrows(NoSuchElementException.class,()->canvas.controlBounds("viewport"));
     }
     @Test void previewHasTransparentSilhouetteAndChangesWhenRotated() {
         PreviewRenderer renderer=new PreviewRenderer();BufferedImage source=sword(0xff3dc5c0);
@@ -177,27 +242,28 @@ class WorkshopTest {
     }
     @Test void categoryMenuSupportsMouseKeyboardAndDoesNotActivateCoveredControls() throws Exception {
         prepare();int[] closed={0};EditorCanvas canvas=new EditorCanvas(session,()->closed[0]++);canvas.draw();
-        canvas.click(250,220,0);canvas.draw();assertEquals(9,session.visible().size());
-        canvas.click(250,160,0);canvas.draw();
+        clickControl(canvas,canvas.firstControl("source:"));canvas.draw();assertEquals(9,session.visible().size());
+        clickControl(canvas,"category");canvas.draw();
         canvas.key(70,false,false,"",s->{});canvas.key(256,false,false,"",s->{});canvas.draw();assertEquals(0,closed[0]);assertEquals(0,session.favoriteCount());
-        canvas.click(250,160,0);canvas.draw();canvas.click(250,250,0);canvas.draw(); // Schwerter, second row, left.
+        clickControl(canvas,"category");canvas.draw();clickControl(canvas,"category-option:2");canvas.draw(); // Schwerter, second row, left.
         assertEquals(TextureCategory.SWORDS,session.categoryFilter());assertEquals(8,session.visible().size());assertFalse(canvas.showingPacks());
-        canvas.click(250,80,0);for(char c:"diamond".toCharArray())canvas.type(c);canvas.draw();assertEquals(2,session.visible().size());
-        canvas.click(250,220,0);assertNotNull(session.focused());canvas.draw();
-        canvas.click(250,160,0);canvas.draw();canvas.key(32,false,false,"",s->{});canvas.draw();assertEquals(0,session.selectedCount());
-        canvas.click(250,160,0);canvas.draw();canvas.key(262,false,false,"",s->{});canvas.key(257,false,false,"",s->{});canvas.draw();
+        clickControl(canvas,"search");for(char c:"diamond".toCharArray())canvas.type(c);canvas.draw();assertEquals(2,session.visible().size());
+        clickControl(canvas,canvas.firstControl("tile:"));assertNotNull(session.focused());canvas.draw();
+        clickControl(canvas,"preview-close");canvas.draw();
+        clickControl(canvas,"category");canvas.draw();canvas.key(32,false,false,"",s->{});canvas.draw();assertEquals(0,session.selectedCount());
+        clickControl(canvas,"category");canvas.draw();canvas.key(262,false,false,"",s->{});canvas.key(257,false,false,"",s->{});canvas.draw();
         assertEquals(TextureCategory.ARMOR,session.categoryFilter());assertTrue(session.visible().isEmpty());
-        canvas.click(250,160,0);canvas.draw();canvas.click(30,92,0);canvas.draw(); // First outside click only closes popup.
-        assertEquals(TextureCategory.ARMOR,session.categoryFilter());canvas.click(30,92,0);canvas.draw();assertTrue(canvas.showingPacks());
+        clickControl(canvas,"category");canvas.draw();canvas.click(200,28,0);canvas.draw(); // First outside click only closes popup.
+        assertEquals(TextureCategory.ARMOR,session.categoryFilter());canvas.click(200,28,0);canvas.draw();assertTrue(canvas.showingPacks());
     }
     @Test void rendersGlobalResultsAndCompactCategoryMenu() throws Exception {
         prepare();EditorCanvas canvas=new EditorCanvas(session,()->{});session.browseCategory(TextureCategory.SWORDS);
         for(int i=0;i<50;i++){canvas.draw();Thread.sleep(10);session.poll();}
         Path dir=Path.of("build/previews");Files.createDirectories(dir);
         canvas.mouseMove(200,200);ImageIO.write(canvas.draw(),"png",dir.resolve("categories-swords.png").toFile());
-        canvas.click(250,160,0);ImageIO.write(canvas.draw(),"png",dir.resolve("categories-menu.png").toFile());
+        clickControl(canvas,"category");ImageIO.write(canvas.draw(),"png",dir.resolve("categories-menu.png").toFile());
         canvas.resize(760,440);ImageIO.write(canvas.draw(),"png",dir.resolve("categories-small.png").toFile());
-        canvas.click(370,220,0);BufferedImage empty=canvas.draw();assertEquals(TextureCategory.BLOCKS,session.categoryFilter()); // Right column at minimum width.
+        clickControl(canvas,"category-option:1");BufferedImage empty=canvas.draw();assertEquals(TextureCategory.BLOCKS,session.categoryFilter()); // Right column at minimum width.
         ImageIO.write(empty,"png",dir.resolve("categories-empty.png").toFile());
     }
 }

@@ -13,8 +13,16 @@ dependencies {
 }
 test { useJUnitPlatform(); systemProperty 'java.awt.headless', 'true' }
 
-// Ship the selected artwork unchanged; only display-size resampling happens at runtime.
+// Ship the transparent artwork as-is; runtime layout fits its visible bounds.
 tasks.named('processResources') {
+    from(rootProject.file('assets/ui/icons')) {
+        include '*.png'
+        into 'assets/v0idpacks/ui'
+    }
+    from(rootProject.file('assets/ui/icons/LICENSE')) {
+        rename { 'FEATHER-LICENSE.txt' }
+        into 'assets/v0idpacks/ui'
+    }
     // Mod Menu reads this path from fabric.mod.json and also uses it as its default.
     from(rootProject.file('assets/branding/v1/v0idpacks-logo.png')) {
         rename { 'icon.png' }

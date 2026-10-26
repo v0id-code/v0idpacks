@@ -19,6 +19,7 @@ for version, spec in matrix.items():
         assert manifest["entrypoints"]["client"] == ["de.v0idpacks.fabric.V0idPacksClient"], version
         assert not any("SmokeClient" in name for name in package.namelist()), version
         assert "de/v0idpacks/core/LibraryStore.class" in package.namelist(), version
+        assert "de/v0idpacks/core/CrystalTextures.class" in package.namelist(), version
         assert "de/v0idpacks/core/LibraryStore$Project.class" in package.namelist(), version
         assert "de/v0idpacks/core/PackPresentation.class" in package.namelist(), version
         assert "de/v0idpacks/fabric/LogoPicker.class" in package.namelist(), version
@@ -34,8 +35,13 @@ for version, spec in matrix.items():
         assert "de/v0idpacks/core/TextureCategory.class" in package.namelist(), version
         assert "de/v0idpacks/core/ArmorPart.class" in package.namelist(), version
         assert "de/v0idpacks/core/ToolType.class" in package.namelist(), version
-        for name in ["core/UiPreferences", "ui/Branding", "ui/UiMotion"]:
+        for name in ["core/UiPreferences", "ui/Branding", "ui/UiMotion", "ui/UiIcons"]:
             assert f"de/v0idpacks/{name}.class" in package.namelist(), (version, name)
+        for name in ["grid", "star", "package", "search", "download", "check", "chevron-down"]:
+            embedded = package.read(f"assets/v0idpacks/ui/{name}.png")
+            assert embedded == (root / f"assets/ui/icons/{name}.png").read_bytes(), (version, name)
+            assert struct.unpack(">II", embedded[16:24]) == (16, 16), (version, name)
+        assert package.read("assets/v0idpacks/ui/FEATHER-LICENSE.txt") == (root / "assets/ui/icons/LICENSE").read_bytes(), version
         icon_path = f"assets/{manifest['id']}/icon.png"
         assert manifest["icon"] == icon_path, version
         icon = package.read(icon_path)

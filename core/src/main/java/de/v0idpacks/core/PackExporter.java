@@ -16,6 +16,7 @@ public final class PackExporter {
     public static Path export(LibraryStore library, Path packs, JsonObject packMetadata) throws IOException {
         LibraryStore.State state = library.state();
         if (state.selected().isEmpty()) throw new IOException("Wähle zuerst mindestens eine Textur aus");
+        validateCrystal(state);
         validatePanoramas(library, state);
         byte[] logo = library.readLogo(state);
         Files.createDirectories(packs);
@@ -51,6 +52,13 @@ public final class PackExporter {
             } else SafeFiles.replace(temp, target);
             return target;
         } finally { Files.deleteIfExists(temp); }
+    }
+    private static void validateCrystal(LibraryStore.State state) throws IOException {
+        TextureRef item = state.selected().get(CrystalTextures.ITEM);
+        TextureRef entity = state.selected().get(CrystalTextures.ENTITY);
+        if (item == null && entity == null) return;
+        if (item == null || entity == null || !item.pack().equals(entity.pack()))
+            throw new IOException("End Crystal unvollständig oder aus verschiedenen Packs: Crystal aus dem gewünschten Quell-Pack erneut übernehmen. Inventar und Entity werden gemeinsam ersetzt.");
     }
     private static void validatePanoramas(LibraryStore library, LibraryStore.State state) throws IOException {
         Map<String, TextureRef[]> panoramas = new TreeMap<>();

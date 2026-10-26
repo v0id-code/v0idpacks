@@ -13,8 +13,8 @@ import static de.v0idpacks.ui.PreviewModel.*;
 public final class ModelLoader {
     @FunctionalInterface public interface Assets { byte[] read(String path) throws IOException; }
     private record Definition(Map<String,String> textures,JsonArray elements) {}
-    public static final String CRYSTAL="assets/minecraft/textures/entity/end_crystal/end_crystal.png";
-    public static final String CRYSTAL_ITEM="assets/minecraft/textures/item/end_crystal.png";
+    public static final String CRYSTAL=CrystalTextures.ENTITY;
+    public static final String CRYSTAL_ITEM=CrystalTextures.ITEM;
     private ModelLoader() {}
     public static PreviewModel load(TextureRef ref,TextureImage selected,Assets assets) throws IOException {
         if(ref.path().equals(CRYSTAL))return endCrystal(selected.frame());

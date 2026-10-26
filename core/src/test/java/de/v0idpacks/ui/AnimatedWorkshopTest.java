@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import static org.junit.jupiter.api.Assertions.*;
+import static de.v0idpacks.ui.CanvasControls.clickControl;
 
 class AnimatedWorkshopTest {
     @TempDir Path temp;
@@ -37,18 +38,19 @@ class AnimatedWorkshopTest {
         assertTrue(alpha>0&&alpha<255);snapshot("motion-open-start",first);
         clock.set(100_000_000);BufferedImage middle=canvas.draw();assertTrue((middle.getRGB(500,600)>>>24)>alpha);snapshot("motion-open-middle",middle);
         clock.set(300_000_000);BufferedImage finished=canvas.draw();assertEquals(255,finished.getRGB(500,600)>>>24);snapshot("motion-open-final",finished);
-        assertNull(canvas.draw());canvas.mouseMove(40,260);int border=canvas.draw().getRGB(12,250);
-        clock.set(350_000_000);assertNotEquals(border,canvas.draw().getRGB(12,250));
+        assertNull(canvas.draw());var reload=canvas.controlBounds("refresh");
+        canvas.mouseMove(reload.x+reload.width/2,reload.y+reload.height/2);int border=canvas.draw().getRGB(reload.x+8,reload.y);
+        clock.set(350_000_000);assertNotEquals(border,canvas.draw().getRGB(reload.x+8,reload.y));
         clock.set(450_000_000);assertNotNull(canvas.draw());assertNull(canvas.draw());
         canvas.resize(760,440);snapshot("branding-compact",canvas.draw());
     }
     @Test void filtersAndPopupKeepWorkingDuringTransitionsAndPreviewSettles() throws Exception {
         EditorCanvas canvas=prepare();canvas.draw();clock.set(300_000_000);canvas.draw();
-        canvas.click(250,160,0);canvas.draw(); // Open category menu; covered cards stay blocked.
+        clickControl(canvas,"category");canvas.draw(); // Open category menu; covered cards stay blocked.
         canvas.key(70,false,false,"",s->{});assertEquals(0,session.favoriteCount());
         clock.set(350_000_000);snapshot("motion-menu-middle",canvas.draw());
-        canvas.click(250,250,0);canvas.draw();assertEquals(TextureCategory.SWORDS,session.categoryFilter());
-        assertEquals(1,session.visible().size());canvas.click(220,220,0);assertNotNull(session.focused());
+        clickControl(canvas,"category-option:2");canvas.draw();assertEquals(TextureCategory.SWORDS,session.categoryFilter());
+        assertEquals(1,session.visible().size());clickControl(canvas,canvas.firstControl("tile:"));assertNotNull(session.focused());
         await(()->session.preview()!=null);canvas.draw(); // Preview enters without delaying selection.
         session.favorite();await(()->!session.busy());assertEquals(1,session.favoriteCount());
         clock.set(430_000_000);snapshot("motion-preview-middle",canvas.draw());
@@ -56,10 +58,10 @@ class AnimatedWorkshopTest {
         await(()->session.thumbnail(session.focused())!=null);canvas.draw();assertNull(canvas.draw());
     }
     @Test void disablingMotionMidTransitionIsImmediateAndPersists() throws Exception {
-        EditorCanvas canvas=prepare();canvas.draw();canvas.click(40,300,0);await(()->!session.busy());
+        EditorCanvas canvas=prepare();canvas.draw();clickControl(canvas,"animations");await(()->!session.busy());
         assertFalse(session.animationsEnabled());assertFalse(new UiPreferences(temp.resolve("config")).animationsEnabled());
         assertEquals(255,canvas.draw().getRGB(500,600)>>>24);assertNull(canvas.draw());
-        canvas.mouseMove(40,260);assertNotNull(canvas.draw());assertNull(canvas.draw());
+        var reload=canvas.controlBounds("refresh");canvas.mouseMove(reload.x+reload.width/2,reload.y+reload.height/2);assertNotNull(canvas.draw());assertNull(canvas.draw());
         EditorCanvas reopened=new EditorCanvas(session,()->{},clock::get);
         assertEquals(255,reopened.draw().getRGB(500,600)>>>24);assertNull(reopened.draw());
     }

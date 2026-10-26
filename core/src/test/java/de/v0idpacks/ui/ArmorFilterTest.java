@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.zip.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static de.v0idpacks.ui.CanvasControls.clickControl;
 
 class ArmorFilterTest {
     @TempDir Path temp;
@@ -69,17 +70,17 @@ class ArmorFilterTest {
     }
     @Test void armorButtonsSupportMouseKeyboardAndCategoryPopupRemainsModal() throws Exception {
         prepare();EditorCanvas canvas=new EditorCanvas(session,()->{});canvas.draw();
-        canvas.click(250,160,0);canvas.draw();canvas.click(450,250,0);canvas.draw();assertEquals(TextureCategory.ARMOR,session.categoryFilter());
-        canvas.click(320,195,0);canvas.draw();assertEquals(ArmorPart.HELMET,session.armorPartFilter());assertEquals(8,session.visible().size());
-        canvas.click(250,80,0);for(char c:"diamond".toCharArray())canvas.type(c);canvas.draw();assertEquals(2,session.visible().size());
-        canvas.click(320,195,0);canvas.draw();canvas.key(258,false,false,"",s->{});canvas.draw();canvas.key(257,false,false,"",s->{});canvas.draw();
+        clickControl(canvas,"category");canvas.draw();clickControl(canvas,"category-option:3");canvas.draw();assertEquals(TextureCategory.ARMOR,session.categoryFilter());
+        clickControl(canvas,"armor:HELMET");canvas.draw();assertEquals(ArmorPart.HELMET,session.armorPartFilter());assertEquals(8,session.visible().size());
+        clickControl(canvas,"search");for(char c:"diamond".toCharArray())canvas.type(c);canvas.draw();assertEquals(2,session.visible().size());
+        clickControl(canvas,"armor:HELMET");canvas.draw();canvas.key(258,false,false,"",s->{});canvas.draw();canvas.key(257,false,false,"",s->{});canvas.draw();
         assertEquals(ArmorPart.CHESTPLATE,session.armorPartFilter());assertEquals("diamond",session.query());assertEquals(2,session.visible().size());
-        canvas.click(600,195,0);canvas.draw();assertEquals(ArmorPart.LEGGINGS,session.armorPartFilter());
-        canvas.click(750,195,0);canvas.draw();assertEquals(ArmorPart.BOOTS,session.armorPartFilter());
-        canvas.click(250,160,0);canvas.draw();canvas.click(320,195,0);canvas.draw(); // Menu header covers the underlying armor buttons.
+        clickControl(canvas,"armor:LEGGINGS");canvas.draw();assertEquals(ArmorPart.LEGGINGS,session.armorPartFilter());
+        clickControl(canvas,"armor:BOOTS");canvas.draw();assertEquals(ArmorPart.BOOTS,session.armorPartFilter());
+        clickControl(canvas,"category");canvas.draw();canvas.click(340,150,0);canvas.draw(); // Menu header covers the underlying armor buttons.
         assertEquals(ArmorPart.BOOTS,session.armorPartFilter());canvas.key(256,false,false,"",s->{});canvas.draw();
-        canvas.click(200,195,0);canvas.draw();assertEquals(ArmorPart.ALL,session.armorPartFilter());assertEquals(14,session.visible().size());
-        canvas.click(250,120,0);canvas.draw();assertTrue(canvas.showingPacks());assertEquals(ArmorPart.ALL,session.armorPartFilter());
+        clickControl(canvas,"armor:ALL");canvas.draw();assertEquals(ArmorPart.ALL,session.armorPartFilter());assertEquals(14,session.visible().size());
+        clickControl(canvas,"pack");canvas.draw();assertTrue(canvas.showingPacks());assertEquals(ArmorPart.ALL,session.armorPartFilter());
     }
     @Test void rendersComparableArmorItemsAndKeepsAllSlotLabelsAccessibleAtMinimumWidth() throws Exception {
         prepare();session.browseArmorPart(ArmorPart.HELMET);session.search("diamond");EditorCanvas canvas=new EditorCanvas(session,()->{});
@@ -87,9 +88,8 @@ class ArmorFilterTest {
         Path out=Path.of("build/previews");Files.createDirectories(out);canvas.mouseMove(200,240);
         ImageIO.write(canvas.draw(),"png",out.resolve("armor-helmets.png").toFile());
         canvas.resize(760,440);ImageIO.write(canvas.draw(),"png",out.resolve("armor-small.png").toFile());
-        int[] centers={181,228,292,357,418};ArmorPart[] parts=ArmorPart.values();
-        for(int i=0;i<centers.length;i++){canvas.click(centers[i],195,0);canvas.draw();assertEquals(parts[i],session.armorPartFilter());}
-        canvas.click(292,195,0);ImageIO.write(canvas.draw(),"png",out.resolve("armor-chestplates-small.png").toFile());
+        for(ArmorPart part:ArmorPart.values()){clickControl(canvas,"armor:"+part.name());canvas.draw();assertEquals(part,session.armorPartFilter());}
+        clickControl(canvas,"armor:CHESTPLATE");ImageIO.write(canvas.draw(),"png",out.resolve("armor-chestplates-small.png").toFile());
         session.search("no-such-item");ImageIO.write(canvas.draw(),"png",out.resolve("armor-empty.png").toFile());assertTrue(session.visible().isEmpty());
     }
 }
