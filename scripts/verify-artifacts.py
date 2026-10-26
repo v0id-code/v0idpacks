@@ -20,6 +20,7 @@ for version, spec in matrix.items():
         assert not any("SmokeClient" in name for name in package.namelist()), version
         assert "de/v0idpacks/core/LibraryStore.class" in package.namelist(), version
         assert "de/v0idpacks/core/CrystalTextures.class" in package.namelist(), version
+        assert "de/v0idpacks/core/ModelAssets.class" in package.namelist(), version
         assert "de/v0idpacks/core/LibraryStore$Project.class" in package.namelist(), version
         assert "de/v0idpacks/core/PackPresentation.class" in package.namelist(), version
         assert "de/v0idpacks/fabric/LogoPicker.class" in package.namelist(), version

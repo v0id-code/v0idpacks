@@ -18,6 +18,7 @@ public final class PackExporter {
         if (state.selected().isEmpty()) throw new IOException("Wähle zuerst mindestens eine Textur aus");
         validateCrystal(state);
         validatePanoramas(library, state);
+        Map<String, byte[]> assets = modelAssets(library, state);
         byte[] logo = library.readLogo(state);
         Files.createDirectories(packs);
         // Content-addressed names keep the previously active ZIP readable on Windows during reload.
@@ -40,6 +41,7 @@ public final class PackExporter {
             try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(temp), StandardCharsets.UTF_8)) {
                 write(zip, "pack.mcmeta", new Gson().toJson(metadata).getBytes(StandardCharsets.UTF_8));
                 if (logo.length > 0) write(zip, "pack.png", logo);
+                for (var asset : assets.entrySet()) write(zip, asset.getKey(), asset.getValue());
                 for (TextureRef texture : state.selected().values()) {
                     PackCatalog.Data data = library.read(texture);
                     write(zip, texture.path(), data.png());
@@ -52,6 +54,22 @@ public final class PackExporter {
             } else SafeFiles.replace(temp, target);
             return target;
         } finally { Files.deleteIfExists(temp); }
+    }
+    private static Map<String, byte[]> modelAssets(LibraryStore library, LibraryStore.State state) throws IOException {
+        Map<String, byte[]> result = new TreeMap<>();
+        for (TextureRef ref : state.selected().values()) {
+            for (var asset : ModelAssets.export(ref, library).entrySet()) {
+                String path = asset.getKey();
+                String texture = path.endsWith(".mcmeta") ? path.substring(0, path.length() - 7) : path;
+                if (state.selected().containsKey(texture)) continue; // Explicit texture choices take precedence.
+                byte[] bytes = asset.getValue();
+                byte[] previous = result.putIfAbsent(path, bytes);
+                if (previous != null && !Arrays.equals(previous, bytes))
+                    throw new IOException("Unterschiedliche Modellressourcen für " + path
+                            + ". Die betroffenen Items aus demselben Quell-Pack übernehmen.");
+            }
+        }
+        return result;
     }
     private static void validateCrystal(LibraryStore.State state) throws IOException {
         TextureRef item = state.selected().get(CrystalTextures.ITEM);

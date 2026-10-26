@@ -18,6 +18,7 @@ Die JUnit-Suite prüft unter anderem:
 - Pack-Informationen, Minecraft-Formatierungen und Texturkategorien;
 - Rüstungs- und Werkzeugfilter, Suche und Tastaturbedienung;
 - Modellvorschauen, Rendering, UI-Einstellungen und Animationen.
+- Modell-Export: verkleinerte Goldäpfel mit geerbten Transformationen, Schild- und Blockiermodelle, moderne bedingte Item-Definitionen, Crystal-Item-Geometrie, animierte Abhängigkeiten, unveränderte Snapshots nach Quellenentfernung, getrennte Elternmodelle beim Mischen von Packs sowie beschädigte/unsichere Ressourcen und Variantenersetzung.
 - End Crystal: gemeinsame Auswahl aus Ordner- und ZIP-Packs, Ersetzen/Entfernen beider Texturen, unveränderte Auswahl bei fehlenden/beschädigten Partnern, Reparatur alter Auswahlen sowie Projektvorschau und Export aus denselben gespeicherten Dateien auch bei geänderten/entfernten Quellen.
 
 Der HTML-Bericht entsteht unter `core/build/reports/tests/test/index.html`. UI-Tests erzeugen Prüfbilder mit Demo-Texturen in `core/build/previews`. Beide Verzeichnisse sind generierte Dateien und werden nicht eingecheckt.

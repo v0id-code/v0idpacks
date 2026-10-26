@@ -109,13 +109,30 @@ public final class LibraryStore {
     public synchronized TextureRef snapshot(TextureRef ref, PackCatalog catalog) throws IOException {
         if (!ref.blob().isEmpty()) { read(ref); return ref; }
         PackCatalog.Data data = catalog.read(ref);
+        return saveSnapshot(ref, data, ModelAssets.collect(ref, catalog));
+    }
+    private TextureRef saveSnapshot(TextureRef ref, PackCatalog.Data data, Map<String, byte[]> dependencies) throws IOException {
         TextureImage.decode(data); // Validate before committing a persistent copy.
+        Map<String, String> assets = new TreeMap<>();
+        for (var entry : dependencies.entrySet()) {
+            String assetHash = SafeFiles.hash(entry.getValue(), new byte[0]);
+            SafeFiles.atomicWrite(root.resolve("assets").resolve(assetHash), entry.getValue());
+            assets.put(entry.getKey(), assetHash);
+        }
         String hash = SafeFiles.hash(data.png(), data.metadata());
         Path dir = root.resolve("textures").resolve(hash);
         Files.createDirectories(dir);
         SafeFiles.atomicWrite(dir.resolve("texture.png"), data.png());
         if (data.metadata().length > 0) SafeFiles.atomicWrite(dir.resolve("texture.png.mcmeta"), data.metadata());
-        return new TextureRef(ref.pack(), ref.path(), hash);
+        return new TextureRef(ref.pack(), ref.path(), hash, assets);
+    }
+    public byte[] readAsset(TextureRef ref, String path) throws IOException {
+        String hash = ref.assets().get(path);
+        if (hash == null) return null;
+        byte[] bytes = SafeFiles.read(root.resolve("assets").resolve(hash),
+                path.endsWith(".png") ? SafeFiles.MAX_TEXTURE : SafeFiles.MAX_METADATA);
+        if (!SafeFiles.hash(bytes, new byte[0]).equals(hash)) throw new IOException("Gespeicherte Modellressource beschädigt: " + path);
+        return bytes;
     }
     public PackCatalog.Data read(TextureRef ref) throws IOException {
         if (ref.blob().isEmpty()) throw new IOException("Keine gespeicherte Kopie");
@@ -138,10 +155,25 @@ public final class LibraryStore {
         Map<String, TextureRef> selected = new TreeMap<>(state.selected());
         if (CrystalTextures.contains(ref.path())) {
             String companion = CrystalTextures.companion(ref.path());
-            if (catalog.readAsset(ref.pack(), companion) == null)
-                throw new IOException("End Crystal: " + companion + " fehlt im Quell-Pack. Inventar und Entity müssen gemeinsam aus demselben Pack übernommen werden.");
+            TextureRef other;
+            byte[] savedPartner = readAsset(ref, companion);
+            if (savedPartner != null) {
+                byte[] meta = readAsset(ref, companion + ".mcmeta");
+                Map<String, byte[]> dependencies = new TreeMap<>();
+                for (String path : ref.assets().keySet()) {
+                    if (!path.equals(companion) && !path.equals(companion + ".mcmeta")) dependencies.put(path, readAsset(ref, path));
+                }
+                PackCatalog.Data chosen = read(ref);
+                dependencies.put(ref.path(), chosen.png());
+                if (chosen.metadata().length > 0) dependencies.put(ref.path() + ".mcmeta", chosen.metadata());
+                other = saveSnapshot(new TextureRef(ref.pack(), companion, ""),
+                        new PackCatalog.Data(savedPartner, meta == null ? new byte[0] : meta), dependencies);
+            } else {
+                if (catalog.readAsset(ref.pack(), companion) == null)
+                    throw new IOException("End Crystal: " + companion + " fehlt im Quell-Pack. Inventar und Entity müssen gemeinsam aus demselben Pack übernommen werden.");
+                other = snapshot(new TextureRef(ref.pack(), companion, ""), catalog);
+            }
             // Validate and snapshot both files before committing either replacement.
-            TextureRef other = snapshot(new TextureRef(ref.pack(), companion, ""), catalog);
             selected.put(companion, other);
         }
         selected.put(ref.path(), snapshot(ref, catalog));
